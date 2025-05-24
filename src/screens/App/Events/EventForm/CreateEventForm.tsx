@@ -18,8 +18,8 @@ import {
   MD3Theme,
 } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainAppStackParamList } from "../../../navigation/types";
-import { supabase } from "../../../lib/supabase";
+import { MainAppStackParamList } from "../../../../navigation/types";
+import { supabase } from "../../../../lib/supabase";
 
 import { EventFormData, SportType } from "./eventForm.types";
 import {

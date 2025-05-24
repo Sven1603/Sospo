@@ -26,7 +26,7 @@ import TransferAdminScreen from "../screens/App/Clubs/TransferAdminScreen";
 import RespondToAdminTransferScreen from "../screens/App/Clubs/RespondToAdminTransferScreen";
 import ClubReviewsScreen from "../screens/App/Clubs/ClubReviewsScreen";
 import SubmitReviewScreen from "../screens/App/SubmitReviewScreen";
-import CreateEventForm from "../screens/App/CreateEventForm";
+import CreateEventForm from "../screens/App/Events/EventForm/CreateEventForm";
 import EventDetailScreen from "../screens/App/Events/EventDetailScreen";
 import EventSettingsScreen from "../screens/App/Events/EventSettingsScreen";
 import EditEventScreen from "../screens/App/Events/EditEventScreen";
