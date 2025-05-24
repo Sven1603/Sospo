@@ -29,7 +29,7 @@ import SubmitReviewScreen from "../screens/App/SubmitReviewScreen";
 import CreateEventForm from "../screens/App/Events/EventForm/CreateEventForm";
 import EventDetailScreen from "../screens/App/Events/EventDetailScreen";
 import EventSettingsScreen from "../screens/App/Events/EventSettingsScreen";
-import EditEventScreen from "../screens/App/Events/EditEventScreen";
+import EditEventForm from "../screens/App/Events/EventForm/EditEventForm";
 
 const Stack = createNativeStackNavigator<MainAppStackParamList>();
 
@@ -185,7 +185,7 @@ const MainAppStackNavigator = () => {
       />
       <Stack.Screen
         name="EditEventScreen"
-        component={EditEventScreen}
+        component={EditEventForm}
         options={({ route }) => ({
           title: `Edit: ${route.params?.eventName || "Event"}`,
         })}

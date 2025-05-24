@@ -10,10 +10,10 @@ import {
   Button,
 } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainAppStackParamList } from "../../../navigation/types";
-import { supabase } from "../../../lib/supabase";
+import { MainAppStackParamList } from "../../../../navigation/types";
+import { supabase } from "../../../../lib/supabase";
 
-import { EventFormData, SportType } from "./EventForm/eventForm.types";
+import { EventFormData, SportType } from "./eventForm.types";
 
 // Define Props for this screen
 type Props = NativeStackScreenProps<MainAppStackParamList, "EditEventScreen">;
@@ -51,7 +51,7 @@ const getStyles = (theme: MD3Theme) =>
     },
   });
 
-const EditEventScreen = ({ route, navigation }: Props) => {
+const EditEventForm = ({ route, navigation }: Props) => {
   const { eventId, eventName: initialEventNameFromParam } = route.params;
   const theme = useTheme<MD3Theme>();
   const styles = React.useMemo(() => getStyles(theme), [theme]);
@@ -236,4 +236,4 @@ const EditEventScreen = ({ route, navigation }: Props) => {
   );
 };
 
-export default EditEventScreen;
+export default EditEventForm;
