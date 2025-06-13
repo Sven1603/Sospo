@@ -18,10 +18,14 @@ import {
   MD3Theme,
 } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainAppStackParamList } from "../../../../navigation/types";
-import { supabase } from "../../../../lib/supabase";
+import { MainAppStackParamList } from "../../../../navigation/types"; // Adjust path
+import { supabase } from "../../../../lib/supabase"; // Adjust path
 
-import { EventFormData, SportType } from "./eventForm.types";
+import {
+  EventFormData,
+  initialEventFormData,
+  SportType,
+} from "./eventForm.types";
 import {
   chooseSportTypesSchema,
   setEventLocationSchema,
@@ -29,55 +33,35 @@ import {
   eventDetailsSchema,
 } from "./eventForm.schemas";
 
+// Import Step Components
 import ChooseSportTypes from "./ChooseSportTypes";
 import SetEventLocation from "./SetEventLocation";
 import DateTimeRecurrence from "./DateTimeRecurrence";
 import EventOverviewAndDetails from "./EventOverviewAndDetails";
 
-export const initialEventFormData: EventFormData = {
-  eventName: "",
-  description: "",
-  selectedSportTypeIds: [],
-  startTime: new Date(new Date().setHours(new Date().getHours() + 1, 0, 0, 0)),
-  endTime: null,
-  isRecurring: false,
-  recurrencePattern: "none",
-  seriesEndDate: null,
-  sportSpecific_distance: "",
-  sportSpecific_pace_minutes: "",
-  sportSpecific_pace_seconds: "",
-  locationText: "",
-  latitude: null,
-  longitude: null,
-  map_derived_address: null,
-  privacy: "public",
-  maxParticipants: "",
-  coverImageUrl: "",
-};
+type Props = NativeStackScreenProps<MainAppStackParamList, "EventWizardScreen">;
 
-type Props = NativeStackScreenProps<MainAppStackParamList, "CreateEventScreen">;
-
-const CreateEventForm: React.FC<Props> = ({ route, navigation }) => {
-  const { clubId, clubName } = route.params || {};
+const EventFormWizard: React.FC<Props> = ({ route, navigation }) => {
+  const {
+    clubId,
+    clubName,
+    eventId,
+    eventName: initialEventName,
+  } = route.params || {};
   const theme = useTheme<MD3Theme>();
+  const styles = getStyles(theme);
 
-  const [currentStep, setCurrentStep] = useState(1);
-  const totalSteps = 4; // 1. Sports, 2. Location, 3. Date/Time, 4. Overview/Details + Publish
+  const [isEditMode, setIsEditMode] = useState<boolean>(!!eventId);
+  const [currentStep, setCurrentStep] = useState(isEditMode ? 4 : 1);
+  const totalSteps = 4; // 1.Sports, 2.Location, 3.Date/Time, 4.Overview/Details+Publish/Save
 
-  const [formData, setFormData] = useState<EventFormData>({
-    ...initialEventFormData,
-    // privacy: clubId ? "controlled" : "public", // TODO: derive from clubs settings
-    startTime: new Date(
-      new Date().setHours(new Date().getHours() + 1, 0, 0, 0)
-    ), // Default to next hour
-  });
+  const [formData, setFormData] = useState<EventFormData>(initialEventFormData);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
 
   const [availableSportTypes, setAvailableSportTypes] = useState<SportType[]>(
     []
   );
   const [loadingInitialData, setLoadingInitialData] = useState(true);
-
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
@@ -86,15 +70,14 @@ const CreateEventForm: React.FC<Props> = ({ route, navigation }) => {
   );
 
   useEffect(() => {
-    navigation.setOptions({
-      title: clubName ? `New Event for ${clubName}` : "Create New Event",
-    });
     let isMounted = true;
-    const initialize = async () => {
+    const initializeForm = async () => {
+      setLoadingInitialData(true);
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!isMounted) return;
+
       if (user) {
         setCurrentUserAuthId(user.id);
       } else {
@@ -105,28 +88,126 @@ const CreateEventForm: React.FC<Props> = ({ route, navigation }) => {
         return;
       }
 
-      const { data: sportsData, error: fetchError } = await supabase
+      // Fetch available sport types (common for create and edit)
+      const { data: sportsData, error: sportsError } = await supabase
         .from("sport_types")
         .select("id, name")
         .order("name");
       if (!isMounted) return;
-      if (fetchError) {
-        console.error("Error fetching sport types:", fetchError);
+      if (sportsError) {
         setErrors((prev) => ({
           ...prev,
-          _sportTypesLoad: "Could not load sport type options.",
+          _sportTypesLoad: "Could not load sport types.",
         }));
       } else if (sportsData) {
         setAvailableSportTypes(sportsData as SportType[]);
-        setErrors((prev) => ({ ...prev, _sportTypesLoad: undefined }));
+      }
+
+      if (eventId) {
+        // Edit Mode
+        setIsEditMode(true);
+        navigation.setOptions({
+          title: `Edit: ${initialEventName || "Event"}`,
+        });
+        try {
+          const { data: eventData, error: eventFetchError } = await supabase
+            .from("events")
+            .select(`*, event_sport_types(sport_types(id))`) // Fetch all fields + current sport type IDs
+            .eq("id", eventId)
+            .single();
+
+          if (!isMounted) return;
+          if (eventFetchError) throw eventFetchError;
+
+          if (eventData) {
+            // Populate formData with existing event data
+            // Ensure date strings from DB are converted to Date objects for pickers
+            const currentSportTypeIds = (eventData.event_sport_types || [])
+              .map(
+                (est: any) =>
+                  est.sport_types &&
+                  (Array.isArray(est.sport_types)
+                    ? est.sport_types[0]?.id
+                    : est.sport_types?.id)
+              )
+              .filter(Boolean) as string[];
+
+            setFormData({
+              eventName: eventData.name || "",
+              description: eventData.description || "",
+              selectedSportTypeIds: currentSportTypeIds,
+              startTime: eventData.start_time
+                ? new Date(eventData.start_time)
+                : null,
+              endTime: eventData.end_time ? new Date(eventData.end_time) : null,
+              // For MVP edit of single instance, recurrence fields are not directly editable from pattern
+              isRecurring: eventData.is_recurring || false, // Display if it was part of a series
+              recurrencePattern:
+                (eventData.recurrence_rule as EventFormData["recurrencePattern"]) ||
+                "none", // Display pattern
+              seriesEndDate: eventData.recurrence_end_date
+                ? new Date(eventData.recurrence_end_date)
+                : null, // Display series end
+
+              sportSpecific_distance: String(
+                eventData.sport_specific_attributes?.distance_km || ""
+              ),
+              sportSpecific_pace_minutes: String(
+                Math.floor(
+                  (eventData.sport_specific_attributes?.pace_seconds_per_km ||
+                    0) / 60
+                ) || ""
+              ),
+              sportSpecific_pace_seconds: String(
+                (eventData.sport_specific_attributes?.pace_seconds_per_km ||
+                  0) % 60 || ""
+              ),
+
+              locationText: eventData.location_text || "",
+              latitude: eventData.latitude,
+              longitude: eventData.longitude,
+              map_derived_address: eventData.map_derived_address || null, // Make sure this is fetched
+              privacy: eventData.privacy as EventFormData["privacy"],
+              maxParticipants: eventData.max_participants?.toString() || "",
+              coverImageUrl: eventData.cover_image_url || "",
+            });
+            if (eventData.name)
+              navigation.setOptions({ title: `Edit: ${eventData.name}` }); // Update title with fetched name
+          } else {
+            throw new Error("Event not found for editing.");
+          }
+        } catch (e: any) {
+          console.error("Error fetching event for editing:", e);
+          setErrors((prev) => ({
+            ...prev,
+            _load: e.message || "Failed to load event data.",
+          }));
+          Alert.alert("Error", "Could not load event data for editing.", [
+            { text: "OK", onPress: () => navigation.goBack() },
+          ]);
+        }
+      } else {
+        // Create Mode
+        setIsEditMode(false);
+        navigation.setOptions({
+          title: clubName ? `New Event for ${clubName}` : "Create New Event",
+        });
+        setFormData({
+          // Reset to initial, considering clubId for privacy
+          ...initialEventFormData,
+          // privacy: clubId ? "controlled" : "public", TODO: set privacy based on club privacy settings
+          startTime: new Date(
+            new Date().setHours(new Date().getHours() + 1, 0, 0, 0)
+          ),
+        });
       }
       setLoadingInitialData(false);
     };
-    initialize();
+    initializeForm();
     return () => {
       isMounted = false;
     };
-  }, [navigation, clubName]);
+  }, [navigation, clubName, eventId, initialEventName, clubId]);
 
   const handleChange = useCallback(
     (field: keyof EventFormData, value: any) => {
@@ -305,7 +386,7 @@ const CreateEventForm: React.FC<Props> = ({ route, navigation }) => {
     [totalSteps]
   );
 
-  const handleFinalSubmit = useCallback(async () => {
+  const handleSaveEvent = useCallback(async () => {
     if (!currentUserAuthId) {
       Alert.alert(
         "Authentication Error",
@@ -319,8 +400,6 @@ const CreateEventForm: React.FC<Props> = ({ route, navigation }) => {
     setErrors({}); // Clear previous submission errors
 
     // --- Consolidate and Validate Data from formData using Zod Schemas ---
-    // It's good practice to validate the relevant parts again to get transformed values.
-
     // Step 1 Data (Sports)
     const step1Validation = chooseSportTypesSchema.safeParse({
       selectedSportTypeIds: formData.selectedSportTypeIds,
@@ -418,41 +497,31 @@ const CreateEventForm: React.FC<Props> = ({ route, navigation }) => {
     const validatedStep4Data = step4Validation.data;
 
     // --- Prepare data for RPC ---
-    const sportSpecificDataToPackage: Record<string, any> = {};
+    let sportSpecificDataToPackage: any = {};
+    const distanceVal = parseFloat(
+      String(formData.sportSpecific_distance).replace(",", ".")
+    );
     if (
-      validatedStep4Data.sportSpecific_distance !== null &&
-      validatedStep4Data.sportSpecific_distance !== undefined
-    ) {
-      sportSpecificDataToPackage.distance_km =
-        validatedStep4Data.sportSpecific_distance; // This is now number | null
-    }
-
-    const paceMinsStr = formData.sportSpecific_pace_minutes; // Use original string from formData for parsing
-    const paceSecsStr = formData.sportSpecific_pace_seconds;
+      !isNaN(distanceVal) &&
+      String(formData.sportSpecific_distance).trim() !== ""
+    )
+      sportSpecificDataToPackage.distance_km = distanceVal;
+    const paceMins = formData.sportSpecific_pace_minutes
+      ? parseInt(formData.sportSpecific_pace_minutes, 10)
+      : 0;
+    const paceSecs = formData.sportSpecific_pace_seconds
+      ? parseInt(formData.sportSpecific_pace_seconds, 10)
+      : 0;
     if (
-      (paceMinsStr && paceMinsStr.trim() !== "") ||
-      (paceSecsStr && paceSecsStr.trim() !== "")
+      !isNaN(paceMins) &&
+      !isNaN(paceSecs) &&
+      paceMins >= 0 &&
+      paceMins <= 59 &&
+      paceSecs >= 0 &&
+      paceSecs <= 59 &&
+      (paceMins > 0 || paceSecs > 0)
     ) {
-      const mins = paceMinsStr ? parseInt(paceMinsStr, 10) : 0;
-      const secs = paceSecsStr ? parseInt(paceSecsStr, 10) : 0;
-      if (
-        !isNaN(mins) &&
-        !isNaN(secs) &&
-        mins >= 0 &&
-        mins <= 59 &&
-        secs >= 0 &&
-        secs <= 59
-      ) {
-        if (mins > 0 || secs > 0) {
-          // Only add if pace is actually set
-          sportSpecificDataToPackage.pace_seconds_per_km = mins * 60 + secs;
-        }
-      } else {
-        // This should have been caught by Zod, but as a safeguard
-        setErrors((prev) => ({ ...prev, submit: "Invalid pace values." }));
-        setIsSubmitting(false);
-        return;
-      }
+      sportSpecificDataToPackage.pace_seconds_per_km = paceMins * 60 + paceSecs;
     }
     const sportSpecificJSON =
       Object.keys(sportSpecificDataToPackage).length > 0
@@ -461,75 +530,90 @@ const CreateEventForm: React.FC<Props> = ({ route, navigation }) => {
 
     let recurrenceRuleToPassToDb = null;
     if (
-      validatedStep3Data.isRecurring &&
-      validatedStep3Data.recurrencePattern !== "none" &&
-      validatedStep3Data.startTime
+      formData.isRecurring &&
+      formData.recurrencePattern !== "none" &&
+      formData.startTime
     ) {
-      // The DB function `create_event_and_link_sports` expects 'weekly' or 'monthly' directly for p_recurrence_pattern
-      recurrenceRuleToPassToDb = validatedStep3Data.recurrencePattern;
+      recurrenceRuleToPassToDb = formData.recurrencePattern;
     }
+    const finalMaxParticipants =
+      formData.maxParticipants &&
+      formData.maxParticipants.trim() !== "" &&
+      !isNaN(parseInt(formData.maxParticipants))
+        ? parseInt(formData.maxParticipants, 10)
+        : null;
+
+    const commonEventData = {
+      p_name: formData.eventName,
+      p_description: formData.description || null,
+      p_location_text: formData.locationText,
+      p_latitude: formData.latitude,
+      p_longitude: formData.longitude,
+      p_map_derived_address: formData.map_derived_address || null,
+      p_privacy: formData.privacy,
+      p_max_participants: finalMaxParticipants,
+      p_cover_image_url: formData.coverImageUrl || null,
+      p_selected_sport_type_ids: validatedStep1Data.selectedSportTypeIds,
+      p_sport_specific_attributes: sportSpecificJSON,
+    };
 
     try {
-      const paramsForRPC = {
-        // Parameter names here MUST match PostgreSQL function definition
-        p_name: validatedStep4Data.eventName,
-        p_description: validatedStep4Data.description || null,
-        p_first_occurrence_start_time: formData.startTime!.toISOString(),
-        p_first_occurrence_end_time: formData.endTime?.toISOString() || null,
-        p_location_text: validatedStep2Data.locationText,
-        p_latitude: formData.latitude,
-        p_longitude: formData.longitude,
-        p_map_derived_address: formData.map_derived_address || null,
-        p_privacy: validatedStep4Data.privacy,
-        p_club_id: clubId || null,
-        p_max_participants: validatedStep4Data.maxParticipants,
-        p_cover_image_url: validatedStep4Data.coverImageUrl || null,
-        p_selected_sport_type_ids: validatedStep1Data.selectedSportTypeIds,
-        p_is_actually_recurring: validatedStep3Data.isRecurring,
-        p_recurrence_pattern: recurrenceRuleToPassToDb, // This should be 'weekly', 'monthly', or null
-        p_series_end_date:
-          validatedStep3Data.isRecurring && validatedStep3Data.seriesEndDate
-            ? validatedStep3Data.seriesEndDate.toISOString().split("T")[0]
-            : null,
-        p_sport_specific_attributes: sportSpecificJSON,
-      };
+      let successMessage = "";
+      let navigateToEventId: string | undefined = eventId;
+      let navigateToEventName: string = formData.eventName;
 
-      console.log(
-        "Submitting to RPC create_event_and_link_sports with params:",
-        JSON.stringify(paramsForRPC, null, 2)
-      );
-
-      const { data: newEventId, error: rpcError } = await supabase.rpc(
-        "create_event_and_link_sports",
-        paramsForRPC
-      );
-
-      if (rpcError) throw rpcError;
-
-      if (newEventId) {
-        setSnackbarMessage("Event created successfully!");
-        setSnackbarVisible(true);
-
-        // Navigate to the newly created event's detail screen
-        setTimeout(() => {
-          navigation.replace("EventDetailScreen", {
-            eventId: newEventId as string,
-            eventName: paramsForRPC.p_name,
-          });
-        }, 1500); // Delay for snackbar
-      } else {
-        // The function returns UUID of the first event, or SETOF UUIDs if you changed it back
-        // If it returns a single UUID, this check is good. If SETOF, data might be an array.
-        // Let's assume it returns the first event ID as UUID.
-        console.warn(
-          "No event ID returned from RPC, but no error. Data:",
-          newEventId
+      if (isEditMode && eventId) {
+        // Call update_event_and_link_sports RPC
+        const { error: rpcError } = await supabase.rpc(
+          "update_event_and_link_sports",
+          {
+            p_event_id: eventId,
+            p_start_time: formData.startTime!.toISOString(),
+            p_end_time: formData.endTime?.toISOString() || null,
+            ...commonEventData,
+          }
         );
-        setSnackbarMessage("Event created, but no ID returned from function.");
-        setSnackbarVisible(true);
-        // Fallback navigation
-        setTimeout(() => navigation.goBack(), 1500);
+        if (rpcError) throw rpcError;
+        successMessage = "Event updated successfully!";
+      } else {
+        // Call create_event_and_link_sports RPC
+        const { data: newEventId, error: rpcError } = await supabase.rpc(
+          "create_event_and_link_sports",
+          {
+            ...commonEventData, // Spread common data
+            p_club_id: clubId || null,
+            // Create function specific recurrence params:
+            p_is_actually_recurring: formData.isRecurring,
+            p_recurrence_pattern: recurrenceRuleToPassToDb,
+            p_first_occurrence_start_time: formData.startTime!.toISOString(),
+            p_first_occurrence_end_time:
+              formData.endTime?.toISOString() || null,
+            p_series_end_date:
+              formData.isRecurring && formData.seriesEndDate
+                ? formData.seriesEndDate.toISOString().split("T")[0]
+                : null,
+          }
+        );
+        if (rpcError) throw rpcError;
+        if (!newEventId) throw new Error("No event ID returned on creation.");
+        successMessage = "Event created successfully!";
+        navigateToEventId = newEventId as string;
       }
+
+      setSnackbarMessage(successMessage);
+      setSnackbarVisible(true);
+      setTimeout(() => {
+        if (navigateToEventId) {
+          // Replace current form with EventDetailScreen
+          navigation.replace("EventDetailScreen", {
+            eventId: navigateToEventId,
+            eventName: navigateToEventName,
+          });
+        } else {
+          // Fallback if no ID (shouldn't happen if logic is correct)
+          navigation.goBack();
+        }
+      }, 1500);
     } catch (e: any) {
       console.error("Error creating event (final submit):", e);
       const errorMessage =
@@ -579,6 +663,7 @@ const CreateEventForm: React.FC<Props> = ({ route, navigation }) => {
           <DateTimeRecurrence
             formData={formData}
             handleChange={handleChange}
+            isEditMode={isEditMode}
             errors={errors}
             theme={theme}
           />
@@ -591,8 +676,9 @@ const CreateEventForm: React.FC<Props> = ({ route, navigation }) => {
             clubId={clubId}
             handleChange={handleChange}
             goToStep={goToStep}
-            handleFinalSubmit={handleFinalSubmit}
+            handleFinalSubmit={handleSaveEvent}
             isSubmitting={isSubmitting}
+            isEditMode={isEditMode}
             theme={theme}
             errors={errors}
           />
@@ -683,99 +769,79 @@ const CreateEventForm: React.FC<Props> = ({ route, navigation }) => {
         >
           {snackbarMessage}
         </Snackbar>
-
-        {/* --- DateTimePickerModal Integration --- */}
-        {/* You need to install and import your chosen DateTimePicker, e.g., react-native-modal-datetime-picker */}
-        {/* Example:
-          {pickerConfig.targetField && (
-            <DateTimePickerModal
-              isVisible={pickerConfig.isVisible}
-              mode={pickerConfig.mode}
-              date={pickerConfig.currentDate || new Date()}
-              onConfirm={handleDateConfirm}
-              onCancel={hidePicker}
-              minimumDate={
-                  pickerConfig.targetField === 'endTime' && formData.startTime 
-                  ? new Date(formData.startTime.getTime() + 60000) 
-                  : pickerConfig.targetField === 'seriesEndDate' && formData.startTime 
-                  ? formData.startTime 
-                  : undefined // No minimum for startTime by default
-              }
-            />
-          )}
-          */}
       </View>
     </KeyboardAvoidingView>
   );
 };
 
-const styles = StyleSheet.create({
-  keyboardAvoidingView: {
-    flex: 1,
-  },
-  mainViewContainer: {
-    flex: 1,
-    backgroundColor: "white", // Use theme background
-  },
-  progressBar: {
-    height: 8,
-    // No margin needed, part of the main view's flow or absolute positioning
-  },
-  scrollContainer: {
-    flex: 1, // Allows ScrollView to take available space BEFORE the absolute footer
-  },
-  scrollContentContainer: {
-    padding: 20, // Horizontal and top padding for content
-    paddingBottom: 120, // <<< INCREASED PADDING: Ample space for the fixed footer buttons
-  },
-  stepIndicator: {
-    textAlign: "center",
-    marginVertical: 10,
-    fontSize: 12,
-  },
-  clubContextText: {
-    textAlign: "center",
-    marginBottom: 20,
-    fontStyle: "italic",
-  },
-  navigationButtons: {
-    position: "absolute", // <<< Makes it an overlay at the bottom
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 20, // Side padding for buttons
-    paddingTop: 15, // Padding above buttons
-    paddingBottom: Platform.OS === "ios" ? 30 : 15, // Padding below buttons (for safe area notch etc.)
-    borderTopWidth: 1,
-    borderTopColor: "black", // Use theme
-    backgroundColor: "white", // Use theme
-    elevation: 4, // Optional: add some elevation if needed
-  },
-  navButton: {
-    flex: 1, // Makes "Back" and "Next" share space
-    marginHorizontal: 5,
-  },
-  navButtonPlaceholder: {
-    // To maintain layout when one button is hidden
-    flex: 1,
-    marginHorizontal: 5,
-  },
-  centered: {
-    // For loading/error states within step components if needed
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  placeholderText: {
-    // For unimplemented steps
-    padding: 20,
-    textAlign: "center",
-    fontSize: 16,
-    color: "gray", // Use theme
-  },
-});
+const getStyles = (theme: MD3Theme) =>
+  StyleSheet.create({
+    keyboardAvoidingView: {
+      flex: 1,
+    },
+    mainViewContainer: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    progressBar: {
+      height: 8,
+      // No margin needed, part of the main view's flow or absolute positioning
+    },
+    scrollContainer: {
+      flex: 1, // Allows ScrollView to take available space BEFORE the absolute footer
+    },
+    scrollContentContainer: {
+      padding: 20, // Horizontal and top padding for content
+      paddingBottom: 120, // <<< INCREASED PADDING: Ample space for the fixed footer buttons
+    },
+    stepIndicator: {
+      textAlign: "center",
+      marginVertical: 10,
+      fontSize: 12,
+    },
+    clubContextText: {
+      textAlign: "center",
+      marginBottom: 20,
+      fontStyle: "italic",
+    },
+    navigationButtons: {
+      position: "absolute", // <<< Makes it an overlay at the bottom
+      bottom: 0,
+      left: 0,
+      right: 0,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingHorizontal: 20, // Side padding for buttons
+      paddingTop: 15, // Padding above buttons
+      paddingBottom: Platform.OS === "ios" ? 30 : 15, // Padding below buttons (for safe area notch etc.)
+      borderTopWidth: 1,
+      borderTopColor: "black", // Use theme
+      backgroundColor: "white", // Use theme
+      elevation: 4, // Optional: add some elevation if needed
+    },
+    navButton: {
+      flex: 1, // Makes "Back" and "Next" share space
+      marginHorizontal: 5,
+    },
+    navButtonPlaceholder: {
+      // To maintain layout when one button is hidden
+      flex: 1,
+      marginHorizontal: 5,
+    },
+    centered: {
+      // For loading/error states within step components if needed
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      padding: 20,
+    },
+    placeholderText: {
+      // For unimplemented steps
+      padding: 20,
+      textAlign: "center",
+      fontSize: 16,
+      color: "gray", // Use theme
+    },
+  });
 
-export default CreateEventForm;
+export default EventFormWizard;

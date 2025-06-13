@@ -8,26 +8,12 @@ import {
   SegmentedButtons,
   HelperText,
   Title,
-  useTheme,
   Caption,
   Divider,
   MD3Theme,
 } from "react-native-paper";
 import { EventFormData } from "./eventForm.types"; // Or from './index'
-import {
-  DatePickerModal,
-  TimePickerModal,
-  es,
-  nl,
-  de,
-  fr,
-  enGB,
-} from "react-native-paper-dates"; // Import pickers and locales
-// For example, to register English (GB) and Dutch locales:
-// import { enGB, nl, registerTranslation } from 'react-native-paper-dates'
-// registerTranslation('en-GB', enGB)
-// registerTranslation('nl', nl)
-// You would do registerTranslation in your App.tsx or main setup.
+import { DatePickerModal, TimePickerModal } from "react-native-paper-dates"; // Import pickers and locales
 
 interface DateTimeRecurrenceProps {
   formData: Pick<
@@ -43,6 +29,7 @@ interface DateTimeRecurrenceProps {
     field: keyof EventFormData,
     value: any
   ) => void;
+  isEditMode?: boolean;
   errors: Partial<
     Record<
       | "startTime"
@@ -104,6 +91,7 @@ const getStyles = (theme: MD3Theme) =>
 const DateTimeRecurrence: React.FC<DateTimeRecurrenceProps> = ({
   formData,
   handleChange,
+  isEditMode,
   errors,
   theme,
 }) => {
@@ -247,7 +235,7 @@ const DateTimeRecurrence: React.FC<DateTimeRecurrenceProps> = ({
         </HelperText>
       )}
 
-      {/* <Text style={styles.label}>End Date & Time (Optional)</Text>
+      <Text style={styles.label}>End Date & Time (Optional)</Text>
       <Button
         onPress={() => setEndTimeDateOpen(true)}
         mode="outlined"
@@ -273,74 +261,79 @@ const DateTimeRecurrence: React.FC<DateTimeRecurrenceProps> = ({
       )}
       <Caption style={styles.caption}>
         If no end time, event duration is assumed to be flexible or short.
-      </Caption> */}
+      </Caption>
 
-      <Divider style={styles.divider} />
+      {!isEditMode && (
+        <>
+          <Divider style={styles.divider} />
 
-      <View style={styles.switchRow}>
-        <Text style={styles.label}>Is this a recurring event?</Text>
-        <Switch
-          value={formData.isRecurring}
-          onValueChange={onToggleRecurring}
-          color={theme.colors.primary}
-        />
-      </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.label}>Is this a recurring event?</Text>
+            <Switch
+              value={formData.isRecurring}
+              onValueChange={onToggleRecurring}
+              color={theme.colors.primary}
+            />
+          </View>
 
-      {formData.isRecurring && (
-        <View style={styles.recurringSection}>
-          <Text style={[styles.label, { marginTop: 0 }]}>Repeats*</Text>
-          <SegmentedButtons
-            value={
-              formData.recurrencePattern === "none"
-                ? ""
-                : formData.recurrencePattern
-            }
-            onValueChange={(value) => {
-              if (value) {
-                handleChange(
-                  "recurrencePattern",
-                  value as "weekly" | "monthly"
-                );
-              } else {
-                handleChange("recurrencePattern", "none");
-              } // Default if deselected (though Zod requires selection)
-            }}
-            buttons={recurrencePatternOptions}
-            style={styles.input}
-            density="medium"
-          />
-          {errors.recurrencePattern && (
-            <HelperText type="error" visible={!!errors.recurrencePattern}>
-              {errors.recurrencePattern}
-            </HelperText>
+          {formData.isRecurring && (
+            <View style={styles.recurringSection}>
+              <Text style={[styles.label, { marginTop: 0 }]}>Repeats*</Text>
+              <SegmentedButtons
+                value={
+                  formData.recurrencePattern === "none"
+                    ? ""
+                    : formData.recurrencePattern
+                }
+                onValueChange={(value) => {
+                  if (value) {
+                    handleChange(
+                      "recurrencePattern",
+                      value as "weekly" | "monthly"
+                    );
+                  } else {
+                    handleChange("recurrencePattern", "none");
+                  } // Default if deselected (though Zod requires selection)
+                }}
+                buttons={recurrencePatternOptions}
+                style={styles.input}
+                density="medium"
+              />
+              {errors.recurrencePattern && (
+                <HelperText type="error" visible={!!errors.recurrencePattern}>
+                  {errors.recurrencePattern}
+                </HelperText>
+              )}
+              <Caption style={styles.caption}>
+                Event repeats on the same day of the week/month as the start
+                date.
+              </Caption>
+
+              <Text style={styles.label}>Recurrence Ends On (Optional)</Text>
+              <Button
+                onPress={() => setRecurrenceEndDateOpen(true)}
+                mode="outlined"
+                icon="calendar-range"
+                style={styles.inputButton}
+                labelStyle={styles.buttonLabel}
+                contentStyle={{ justifyContent: "flex-start" }}
+              >
+                {formData.seriesEndDate
+                  ? formData.seriesEndDate.toLocaleDateString()
+                  : "Select Date"}
+              </Button>
+              {errors.seriesEndDate && (
+                <HelperText type="error" visible={!!errors.seriesEndDate}>
+                  {errors.seriesEndDate}
+                </HelperText>
+              )}
+              <Caption style={styles.caption}>
+                If no end date, it may recur based on system defaults or
+                indefinitely.
+              </Caption>
+            </View>
           )}
-          <Caption style={styles.caption}>
-            Event repeats on the same day of the week/month as the start date.
-          </Caption>
-
-          <Text style={styles.label}>Recurrence Ends On (Optional)</Text>
-          <Button
-            onPress={() => setRecurrenceEndDateOpen(true)}
-            mode="outlined"
-            icon="calendar-range"
-            style={styles.inputButton}
-            labelStyle={styles.buttonLabel}
-            contentStyle={{ justifyContent: "flex-start" }}
-          >
-            {formData.seriesEndDate
-              ? formData.seriesEndDate.toLocaleDateString()
-              : "Select Date"}
-          </Button>
-          {errors.seriesEndDate && (
-            <HelperText type="error" visible={!!errors.seriesEndDate}>
-              {errors.seriesEndDate}
-            </HelperText>
-          )}
-          <Caption style={styles.caption}>
-            If no end date, it may recur based on system defaults or
-            indefinitely.
-          </Caption>
-        </View>
+        </>
       )}
 
       {/* DatePickerModal for Start Date */}

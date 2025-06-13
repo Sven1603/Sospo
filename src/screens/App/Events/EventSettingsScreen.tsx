@@ -1,25 +1,19 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { View, StyleSheet, ScrollView, Alert } from "react-native";
-import {
-  Text,
-  Title,
-  List,
-  Divider,
-  useTheme,
-  MD3Theme,
-  ActivityIndicator,
-  Button, // For a potential fallback if no actions are available
-} from "react-native-paper";
+import { List, Divider, ActivityIndicator } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MainAppStackParamList } from "../../../navigation/types"; // Adjust path
 import { supabase } from "../../../lib/supabase"; // Adjust path
+import { AppTheme, useAppTheme } from "../../../theme/theme";
+import StyledText from "../../../components/ui/StyledText";
+import StyledButton from "../../../components/ui/StyledButton";
 
 type Props = NativeStackScreenProps<
   MainAppStackParamList,
   "EventSettingsScreen"
 >;
 
-const getStyles = (theme: MD3Theme) =>
+const getStyles = (theme: AppTheme) =>
   StyleSheet.create({
     container: {
       flex: 1,
@@ -58,7 +52,7 @@ const getStyles = (theme: MD3Theme) =>
 
 const EventSettingsScreen = ({ route, navigation }: Props) => {
   const { eventId, eventName, clubId, createdByUserId } = route.params;
-  const theme = useTheme<MD3Theme>();
+  const theme = useAppTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
 
   const [currentUserAuthId, setCurrentUserAuthId] = useState<string | null>(
@@ -166,7 +160,7 @@ const EventSettingsScreen = ({ route, navigation }: Props) => {
     return (
       <View style={styles.centered}>
         <ActivityIndicator animating={true} size="large" />
-        <Text style={{ marginTop: 10 }}>Checking permissions...</Text>
+        <StyledText>Checking permissions...</StyledText>
       </View>
     );
   }
@@ -176,7 +170,7 @@ const EventSettingsScreen = ({ route, navigation }: Props) => {
       style={styles.container}
       contentContainerStyle={styles.scrollContentContainer}
     >
-      <Title style={styles.headerTitle}>Settings for "{eventName}"</Title>
+      <StyledText variant="titleMedium">Settings for "{eventName}"</StyledText>
       <Divider style={{ marginBottom: 20 }} />
 
       {canManage ? (
@@ -185,8 +179,31 @@ const EventSettingsScreen = ({ route, navigation }: Props) => {
             title="Edit Event Details"
             description="Modify event information, time, location, etc."
             left={(props) => <List.Icon {...props} icon="pencil-outline" />}
+            onPress={() => {
+              if (eventId) {
+                // Ensure eventId is available
+                navigation.navigate("EventWizardScreen", {
+                  eventId: eventId,
+                  eventName: eventName,
+                  // clubId,
+                });
+              } else {
+                Alert.alert("Error", "Event ID is missing, cannot edit.");
+              }
+            }}
+            style={styles.listItem}
+          />
+          <List.Item
+            title="Manage Join Requests"
+            description="Approve or reject pending requests to join this event."
+            left={(props) => (
+              <List.Icon {...props} icon="account-multiple-check-outline" />
+            )}
             onPress={() =>
-              navigation.navigate("EditEventScreen", { eventId, eventName })
+              navigation.navigate("ManageEventJoinRequests", {
+                eventId,
+                eventName,
+              })
             }
             style={styles.listItem}
           />
@@ -212,11 +229,13 @@ const EventSettingsScreen = ({ route, navigation }: Props) => {
         </List.Section>
       ) : (
         <View style={styles.centered}>
-          <Text>You do not have permission to manage this event.</Text>
+          <StyledText>
+            You do not have permission to manage this event.
+          </StyledText>
           {/* Provide a way back if they landed here by mistake or permissions changed */}
-          <Button onPress={() => navigation.goBack()} style={{ marginTop: 20 }}>
+          <StyledButton onPress={() => navigation.goBack()}>
             Go Back
-          </Button>
+          </StyledButton>
         </View>
       )}
       {/* Add other event settings here if any (e.g., notification preferences for this event) */}

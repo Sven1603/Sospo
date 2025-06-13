@@ -309,7 +309,7 @@ const ClubSettingsScreen = ({ route, navigation }: Props) => {
             description="Organize a new event for this club."
             left={(props) => <List.Icon {...props} icon="calendar-plus" />}
             onPress={() =>
-              navigation.navigate("CreateEventScreen", {
+              navigation.navigate("EventWizardScreen", {
                 clubId: clubDetails.id,
                 clubName: clubDetails.name,
               })

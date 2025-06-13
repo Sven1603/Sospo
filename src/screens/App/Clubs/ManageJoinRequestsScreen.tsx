@@ -23,7 +23,6 @@ import {
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MainAppStackParamList } from "../../../navigation/types";
 import { supabase } from "../../../lib/supabase";
-import { ProfileStub } from "./ClubDetailScreen"; // Assuming ProfileStub is exported or redefined
 import { JoinRequest } from "../types";
 
 type Props = NativeStackScreenProps<

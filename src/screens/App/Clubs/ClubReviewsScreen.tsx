@@ -17,7 +17,7 @@ import { MainAppStackParamList } from "../../../navigation/types"; // Adjust pat
 import { supabase } from "../../../lib/supabase"; // Adjust path if needed
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons"; // For star icons
 import { useFocusEffect } from "@react-navigation/native"; // To refresh on focus
-import { ProfileStub } from "../types";
+import { ProfileStub } from "../../../types/commonTypes";
 
 // Type for a single review item with reviewer profile
 export type ReviewItem = {

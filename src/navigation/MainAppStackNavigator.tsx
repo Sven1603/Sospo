@@ -10,7 +10,7 @@ import {
   Theme,
   NavigationProp,
 } from "@react-navigation/native";
-import { IconButton } from "react-native-paper";
+import { IconButton, useTheme } from "react-native-paper";
 
 import AppNavigator from "./AppNavigator";
 import ProfileScreen from "../screens/App/ProfileScreen";
@@ -26,10 +26,10 @@ import TransferAdminScreen from "../screens/App/Clubs/TransferAdminScreen";
 import RespondToAdminTransferScreen from "../screens/App/Clubs/RespondToAdminTransferScreen";
 import ClubReviewsScreen from "../screens/App/Clubs/ClubReviewsScreen";
 import SubmitReviewScreen from "../screens/App/SubmitReviewScreen";
-import CreateEventForm from "../screens/App/Events/EventForm/CreateEventForm";
+import EventFormWizard from "../screens/App/Events/EventForm/EventFormWizard";
 import EventDetailScreen from "../screens/App/Events/EventDetailScreen";
 import EventSettingsScreen from "../screens/App/Events/EventSettingsScreen";
-import EditEventForm from "../screens/App/Events/EventForm/EditEventForm";
+import ManageEventJoinRequestsScreen from "../screens/App/Events/ManageEventJoinRequestsScreen";
 
 const Stack = createNativeStackNavigator<MainAppStackParamList>();
 
@@ -37,7 +37,7 @@ const getHeaderTitle = (route: RouteProp<MainAppStackParamList, "AppTabs">) => {
   const routeName = getFocusedRouteNameFromRoute(route) ?? "Home";
   switch (routeName as keyof AppTabParamList) {
     case "Home":
-      return "Sospo Home";
+      return "Home";
     case "Clubs":
       return "Clubs";
     case "Events":
@@ -48,6 +48,8 @@ const getHeaderTitle = (route: RouteProp<MainAppStackParamList, "AppTabs">) => {
 };
 
 const MainAppStackNavigator = () => {
+  const theme = useTheme();
+
   return (
     <Stack.Navigator
       screenOptions={(props: {
@@ -55,16 +57,25 @@ const MainAppStackNavigator = () => {
         navigation: NavigationProp<MainAppStackParamList>;
         theme: Theme;
       }): NativeStackNavigationOptions => ({
+        contentStyle: {
+          paddingVertical: 24,
+          backgroundColor: theme.colors.background,
+        },
         headerStyle: {
-          // backgroundColor: '#yourHeaderColor',
+          backgroundColor: theme.colors.background,
         },
         headerTitleStyle: {
-          // fontWeight: 'bold',
+          fontFamily: "LeagueSpartan-Bold",
+          fontWeight: "bold",
+          fontSize: 24,
+          color: theme.colors.onBackground,
         },
+        headerTintColor: theme.colors.onBackground,
         headerLeft: () => (
           <IconButton
             icon="account-circle-outline"
-            size={28}
+            iconColor={theme.colors.onBackground}
+            size={40}
             onPress={() => props.navigation.navigate("Profile")}
           />
         ),
@@ -92,7 +103,11 @@ const MainAppStackNavigator = () => {
         component={CreateClubScreen}
         options={{ title: "Create New Club", headerLeft: undefined }}
       />
-      <Stack.Screen name="ClubDetail" component={ClubDetailScreen} />
+      <Stack.Screen
+        name="ClubDetail"
+        component={ClubDetailScreen}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen
         name="ClaimClub"
         component={ClaimClubScreen}
@@ -160,8 +175,8 @@ const MainAppStackNavigator = () => {
         })}
       />
       <Stack.Screen
-        name="CreateEventScreen"
-        component={CreateEventForm}
+        name="EventWizardScreen"
+        component={EventFormWizard}
         options={({ route }) => ({
           title: route.params?.clubName
             ? `New Event for ${route.params.clubName}`
@@ -184,10 +199,10 @@ const MainAppStackNavigator = () => {
         })}
       />
       <Stack.Screen
-        name="EditEventScreen"
-        component={EditEventForm}
+        name="ManageEventJoinRequests"
+        component={ManageEventJoinRequestsScreen}
         options={({ route }) => ({
-          title: `Edit: ${route.params?.eventName || "Event"}`,
+          title: `Join Requests: ${route.params.eventName}`,
         })}
       />
     </Stack.Navigator>

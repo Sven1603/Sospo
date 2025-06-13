@@ -1,13 +1,12 @@
 // src/screens/App/CreateEventForm/EventOverviewAndDetails.tsx
 import React from "react";
-import { View, StyleSheet, TouchableOpacity } from "react-native";
+import { View, StyleSheet } from "react-native";
 import {
   Text,
   Button,
   Title,
   Paragraph,
   Divider,
-  useTheme,
   Caption,
   Card,
   TextInput,
@@ -25,6 +24,7 @@ interface EventOverviewAndDetailsProps {
   goToStep: (step: number) => void;
   handleFinalSubmit: () => Promise<void>;
   isSubmitting: boolean;
+  isEditMode?: boolean;
   theme: MD3Theme;
   errors: Partial<
     Record<keyof EventFormData | "submit", string | null | undefined>
@@ -39,6 +39,7 @@ const EventOverviewAndDetails: React.FC<EventOverviewAndDetailsProps> = ({
   goToStep,
   handleFinalSubmit,
   isSubmitting,
+  isEditMode,
   theme,
   errors,
 }) => {
@@ -87,20 +88,19 @@ const EventOverviewAndDetails: React.FC<EventOverviewAndDetailsProps> = ({
     selectedSportNamesLower.length === 1 &&
     selectedSportNamesLower.includes("run");
 
-  const privacyOptions = clubId
-    ? [
-        { label: "Public", value: "public" },
-        { label: "Club Members Only", value: "controlled" },
-        { label: "Invite Only", value: "private" },
-      ]
-    : [
-        { label: "Public", value: "public" },
-        { label: "Invite Only", value: "private" },
-      ];
+  const privacyOptions = [
+    { label: "Public", value: "public" },
+    { label: "Controlled", value: "controlled", icon: "account-eye-outline" },
+    { label: "Invite Only", value: "private" },
+  ];
 
   return (
     <View>
-      <Title style={styles.stepTitle}>Step 4: Overview & Final Details</Title>
+      <Title style={styles.stepTitle}>
+        {isEditMode
+          ? "Step 4: Review & Update Details"
+          : "Step 4: Overview & Final Details"}
+      </Title>
       <Caption style={{ textAlign: "center", marginBottom: 15 }}>
         Review your event. Tap a section to edit.
       </Caption>
@@ -326,9 +326,15 @@ const EventOverviewAndDetails: React.FC<EventOverviewAndDetailsProps> = ({
         loading={isSubmitting}
         disabled={isSubmitting}
         style={styles.publishButton}
-        icon="publish"
+        icon={isEditMode ? "content-save-edit-outline" : "publish"}
       >
-        {isSubmitting ? "Publishing Event..." : "Publish Event"}
+        {isSubmitting
+          ? isEditMode
+            ? "Saving..."
+            : "Publishing..."
+          : isEditMode
+          ? "Save Changes"
+          : "Publish Event"}
       </Button>
     </View>
   );

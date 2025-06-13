@@ -14,9 +14,9 @@ import {
   HelperText, // Added HelperText
 } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainAppStackParamList } from "../../../navigation/types"; // Adjust path if needed
-import { supabase } from "../../../lib/supabase"; // Adjust path if needed
-import { ProfileStub } from "./ClubDetailScreen"; // Adjust path if needed
+import { MainAppStackParamList } from "../../../navigation/types";
+import { supabase } from "../../../lib/supabase";
+import { ProfileStub } from "../../../types/commonTypes";
 
 type ClubMemberOption = {
   user_id: string;

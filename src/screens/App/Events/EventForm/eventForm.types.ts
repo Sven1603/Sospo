@@ -24,3 +24,24 @@ export type EventFormData = {
   maxParticipants: string;
   coverImageUrl: string;
 };
+
+export const initialEventFormData: EventFormData = {
+  eventName: "",
+  description: "",
+  selectedSportTypeIds: [],
+  startTime: new Date(new Date().setHours(new Date().getHours() + 1, 0, 0, 0)),
+  endTime: null,
+  isRecurring: false,
+  recurrencePattern: "none",
+  seriesEndDate: null,
+  sportSpecific_distance: "",
+  sportSpecific_pace_minutes: "",
+  sportSpecific_pace_seconds: "",
+  locationText: "",
+  latitude: null,
+  longitude: null,
+  map_derived_address: null,
+  privacy: "public",
+  maxParticipants: "",
+  coverImageUrl: "",
+};

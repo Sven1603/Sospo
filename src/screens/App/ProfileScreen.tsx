@@ -1,18 +1,17 @@
 // src/screens/App/ProfileScreen.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { View, StyleSheet, Alert } from "react-native";
-import {
-  Text,
-  Button,
-  TextInput,
-  ActivityIndicator,
-  HelperText,
-  Snackbar,
-} from "react-native-paper";
+import { TextInput, ActivityIndicator, Snackbar } from "react-native-paper";
 import { supabase } from "../../lib/supabase";
 import type { User } from "@supabase/supabase-js";
+import { AppTheme, useAppTheme } from "../../theme/theme";
+import StyledText from "../../components/ui/StyledText";
+import StyledButton from "../../components/ui/StyledButton";
 
 const ProfileScreen = () => {
+  const theme = useAppTheme();
+  const styles = getStyles(theme);
+
   const [user, setUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -26,6 +25,20 @@ const ProfileScreen = () => {
   const [errorText, setErrorText] = useState("");
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
+
+  const [loadingLogout, setLoadingLogout] = React.useState(false);
+
+  const handleLogout = async () => {
+    setLoadingLogout(true);
+    const { error } = await supabase.auth.signOut();
+    setLoadingLogout(false);
+    if (error) {
+      console.error("Error logging out:", error.message);
+      // Optionally show an alert to the user
+      // Alert.alert("Logout Error", error.message);
+    }
+    // The onAuthStateChange listener in App.tsx will handle navigation to Auth flow
+  };
 
   // Fetch current user and their profile
   const fetchProfile = useCallback(async (currentUser: User) => {
@@ -171,21 +184,19 @@ const ProfileScreen = () => {
     return (
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator animating={true} size="large" />
-        <Text style={{ marginTop: 10 }}>Loading profile...</Text>
+        <StyledText>Loading profile...</StyledText>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <Text variant="headlineMedium" style={styles.title}>
-        Edit Profile
-      </Text>
+      <StyledText variant="titleMedium">Edit Profile</StyledText>
 
       {!dbUsername && ( // Show a prompt if username hasn't been set from DB
-        <Text style={styles.noticeText}>
+        <StyledText>
           Please set your unique username to complete your profile.
-        </Text>
+        </StyledText>
       )}
 
       <TextInput
@@ -205,9 +216,7 @@ const ProfileScreen = () => {
         mode="outlined"
         error={!!errorText && errorText.toLowerCase().includes("username")} // Highlight if error is about username
       />
-      <HelperText type="info" visible={true} style={styles.infoText}>
-        Min 3 chars, letters, numbers, underscores.
-      </HelperText>
+      <StyledText>Min 3 chars, letters, numbers, underscores.</StyledText>
 
       <TextInput
         label="Full Name"
@@ -227,22 +236,24 @@ const ProfileScreen = () => {
       />
       */}
 
-      {!!errorText && (
-        <HelperText type="error" visible={!!errorText} style={styles.errorText}>
-          {errorText}
-        </HelperText>
-      )}
+      {!!errorText && <StyledText>{errorText}</StyledText>}
 
-      <Button
-        mode="contained"
+      <StyledButton
         onPress={handleUpdateProfile}
         loading={savingProfile}
         disabled={savingProfile || loadingProfile}
-        style={styles.button}
         icon="content-save"
       >
         {savingProfile ? "Saving..." : "Save Profile"}
-      </Button>
+      </StyledButton>
+
+      {loadingLogout ? (
+        <ActivityIndicator animating={true} />
+      ) : (
+        <StyledButton onPress={handleLogout} icon="logout">
+          Logout
+        </StyledButton>
+      )}
 
       <Snackbar
         visible={snackbarVisible}
@@ -255,38 +266,19 @@ const ProfileScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-  },
-  centered: {
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  title: {
-    textAlign: "center",
-    marginBottom: 24,
-  },
-  input: {
-    marginBottom: 2, // Reduced margin for HelperText
-  },
-  infoText: {
-    marginBottom: 12,
-  },
-  button: {
-    marginTop: 20,
-  },
-  errorText: {
-    // marginBottom: 10, // Handled by HelperText default margins
-    // textAlign: 'center',
-  },
-  noticeText: {
-    marginBottom: 16,
-    textAlign: "center",
-    fontWeight: "bold",
-    color: "orange", // Or your theme's notice color
-  },
-});
+const getStyles = (theme: AppTheme) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 20,
+    },
+    centered: {
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    input: {
+      marginBottom: 2,
+    },
+  });
 
 export default ProfileScreen;

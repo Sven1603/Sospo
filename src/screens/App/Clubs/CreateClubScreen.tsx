@@ -148,10 +148,6 @@ const CreateClubScreen = ({ navigation }: Props) => {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text variant="headlineSmall" style={styles.title}>
-        Create a New Club
-      </Text>
-
       <TextInput
         label="Club Name*"
         value={clubName}

@@ -1,251 +1,181 @@
 // src/screens/App/Events/EventsScreen.tsx
-import React, { useState, useEffect, useCallback } from "react";
-import {
-  View,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  RefreshControl,
-} from "react-native";
-import {
-  Text,
-  FAB,
-  ActivityIndicator,
-  Card,
-  Title,
-  Paragraph,
-  Chip,
-  useTheme,
-  MD3Theme,
-  Button,
-} from "react-native-paper";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack"; // For typing navigation from useNavigation
-import { MainAppStackParamList } from "../../../navigation/types"; // Adjust path
-import { supabase } from "../../../lib/supabase"; // Adjust path
-import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-import { ListedEvent, SportTypeStub } from "./event.types";
+import React, { useCallback, useMemo } from "react";
+import { View, StyleSheet, RefreshControl, SectionList } from "react-native";
+import { ActivityIndicator, Chip } from "react-native-paper";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { MainAppStackParamList } from "../../../navigation/types";
+import EventListItem from "../../../components/ui/EventListItem";
+import { useQuery } from "@tanstack/react-query";
+import { fetchUpcomingEvents } from "../../../services/eventService";
+import type { ListedEvent } from "../../../types/eventTypes";
+import { AppTheme, useAppTheme } from "../../../theme/theme";
+import StyledText from "../../../components/ui/StyledText";
+import StyledButton from "../../../components/ui/StyledButton";
 
-// Type for navigation prop obtained via useNavigation, targeting MainAppStack
+type EventSection = {
+  title: string; // e.g., "Sun 16, March"
+  data: ListedEvent[];
+};
+
+const formatSectionHeaderDate = (date: Date): string => {
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "long",
+    day: "numeric",
+  });
+};
+
+const groupEventsByDay = (events: ListedEvent[]): EventSection[] => {
+  if (!events || events.length === 0) return [];
+
+  const grouped = events.reduce((acc: Record<string, ListedEvent[]>, event) => {
+    const eventDate = new Date(event.start_time).toDateString();
+    if (!acc[eventDate]) {
+      acc[eventDate] = [];
+    }
+    acc[eventDate].push(event);
+    return acc;
+  }, {});
+
+  return Object.entries(grouped).map(([dateString, data]) => ({
+    title: formatSectionHeaderDate(new Date(dateString)),
+    data: data,
+  }));
+};
+
 type EventsScreenNavigationProp =
   NativeStackNavigationProp<MainAppStackParamList>;
 
 const EventsScreen = () => {
   const navigation = useNavigation<EventsScreenNavigationProp>();
-  const theme = useTheme<MD3Theme>();
+  const theme = useAppTheme();
   const styles = React.useMemo(() => getStyles(theme), [theme]);
 
-  const [loadingEvents, setLoadingEvents] = useState(true);
-  const [events, setEvents] = useState<ListedEvent[]>([]);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const {
+    data: events = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useQuery<ListedEvent[], Error>({
+    queryKey: ["upcomingEvents"],
+    queryFn: fetchUpcomingEvents,
+  });
 
-  const fetchEvents = useCallback(async () => {
-    console.log("[EventsScreen] Fetching events...");
-    if (!refreshing) setLoadingEvents(true);
-    setFetchError(null);
-    try {
-      const now = new Date().toISOString();
-      // The RLS policies will automatically filter which events this user can see.
-      // We just ask for upcoming events.
-      const { data, error } = await supabase
-        .from("events")
-        .select(
-          `
-          id,
-          name,
-          description,
-          start_time,
-          location_text,
-          cover_image_url,
-          club_id,
-          privacy,
-          event_sport_types ( sport_types ( id, name ) )
-        `
-        )
-        .gte("start_time", now) // Show only upcoming or ongoing events
-        .order("start_time", { ascending: true })
-        .limit(50); // Keep a limit for performance
+  const onRefresh = useCallback(async () => {
+    console.log("[EventsScreen] Pull-to-refresh triggered.");
+    await refetch();
+  }, [refetch]);
 
-      if (error) throw error;
+  const sectionedEvents = useMemo(() => groupEventsByDay(events), [events]);
 
-      if (data) {
-        console.log(`[EventsScreen] Fetched ${data.length} events.`);
-        setEvents(data as any as ListedEvent[]);
-      } else {
-        setEvents([]);
-      }
-    } catch (error: any) {
-      console.error("[EventsScreen] Error fetching events:", error);
-      setFetchError(error.message || "Failed to fetch events.");
-    } finally {
-      setLoadingEvents(false);
-      setRefreshing(false);
-    }
-  }, [refreshing]);
-
-  useFocusEffect(
-    useCallback(() => {
-      fetchEvents();
-    }, [fetchEvents])
-  );
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    // fetchEvents() will be called due to refreshing state change if needed,
-    // or call it directly:
-    // fetchEvents();
-  }, []); // refreshing dependency removed from here as fetchEvents handles it
-
-  // Helper to correctly get sport name from potentially nested/array structure
-  const getSportNameFromEventSportType = (
-    sportTypeData: SportTypeStub | SportTypeStub[] | null
-  ): string | null => {
-    if (!sportTypeData) return null;
-    if (Array.isArray(sportTypeData)) {
-      return sportTypeData.length > 0 ? sportTypeData[0].name : null;
-    }
-    return sportTypeData.name;
-  };
-  const getSportIdFromEventSportType = (
-    sportTypeData: SportTypeStub | SportTypeStub[] | null
-  ): string | null => {
-    if (!sportTypeData) return null;
-    if (Array.isArray(sportTypeData)) {
-      return sportTypeData.length > 0 ? sportTypeData[0].id : null;
-    }
-    return sportTypeData.id;
+  const renderSportChips = (
+    eventSportTypes: ListedEvent["event_sport_types"]
+  ) => {
+    if (!eventSportTypes || eventSportTypes.length === 0) return null;
+    return eventSportTypes.map((est, index) => {
+      const sportType = est.sport_types;
+      return sportType ? (
+        <Chip
+          key={sportType.id || `sport-${index}`}
+          icon="tag-outline"
+          style={styles.chip}
+          textStyle={styles.chipText}
+        >
+          {sportType.name}
+        </Chip>
+      ) : null;
+    });
   };
 
   const renderEventItem = ({ item }: { item: ListedEvent }) => (
-    <TouchableOpacity
+    <EventListItem
+      startTime={item.start_time}
+      title={item.name}
+      organizer="placeholder"
+      location={item.location_text}
+      participantCount={100}
+      eventDetails={{ distance: 100, pace: 100 }}
+      privacy={item.privacy}
       onPress={() =>
         navigation.navigate("EventDetailScreen", {
           eventId: item.id,
           eventName: item.name,
         })
       }
-    >
-      <Card style={styles.card}>
-        {item.cover_image_url && (
-          <Card.Cover
-            source={{ uri: item.cover_image_url }}
-            style={styles.cardCover}
-          />
-        )}
-        <Card.Content>
-          <Title style={styles.cardTitle} numberOfLines={2}>
-            {item.name}
-          </Title>
-          <View style={styles.detailRow}>
-            <MaterialCommunityIcons
-              name="calendar-clock"
-              size={16}
-              color={theme.colors.onSurfaceVariant}
-            />
-            <Text style={styles.detailText}>
-              {new Date(item.start_time).toLocaleString([], {
-                dateStyle: "medium",
-                timeStyle: "short",
-              })}
-            </Text>
-          </View>
-          {item.location_text && (
-            <View style={styles.detailRow}>
-              <MaterialCommunityIcons
-                name="map-marker-outline"
-                size={16}
-                color={theme.colors.onSurfaceVariant}
-              />
-              <Text style={styles.detailText} numberOfLines={1}>
-                {item.location_text}
-              </Text>
-            </View>
-          )}
-          <View style={styles.chipContainer}>
-            {item.event_sport_types &&
-              item.event_sport_types.map((est, index) => {
-                const sportName = getSportNameFromEventSportType(
-                  est.sport_types
-                );
-                const sportId = getSportIdFromEventSportType(est.sport_types);
-                return sportName ? (
-                  <Chip
-                    key={sportId || `sport-${index}`}
-                    icon="tag-outline"
-                    style={styles.chip}
-                    textStyle={styles.chipText}
-                  >
-                    {sportName}
-                  </Chip>
-                ) : null;
-              })}
-          </View>
-        </Card.Content>
-      </Card>
-    </TouchableOpacity>
+    />
   );
 
-  if (loadingEvents && events.length === 0) {
+  if (isLoading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator animating={true} size="large" />
-        <Text>Loading upcoming events...</Text>
+        <StyledText>Loading upcoming events...</StyledText>
       </View>
     );
   }
 
-  if (fetchError) {
+  if (isError && error) {
     return (
       <View style={styles.centered}>
-        <Text style={{ color: theme.colors.error }}>Error: {fetchError}</Text>
-        <Button onPress={fetchEvents}>Try Again</Button>
+        <StyledText>Error fetching events: {error.message}</StyledText>
+        <StyledButton onPress={() => refetch()}>Try Again</StyledButton>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <FlatList
-        data={events}
+      <SectionList
+        sections={sectionedEvents}
         keyExtractor={(item) => item.id}
         renderItem={renderEventItem}
+        renderSectionHeader={({ section: { title } }) => (
+          <StyledText>{title}</StyledText>
+        )}
+        stickySectionHeadersEnabled={true}
         ListHeaderComponent={
-          <Title style={styles.listHeader}>Upcoming Public Events</Title>
+          <>
+            {/* Your filter buttons can go here */}
+            <View style={{ flexDirection: "row", paddingHorizontal: 16 }}>
+              <StyledButton variant="outline">Type</StyledButton>
+              <StyledButton variant="outline" style={{ marginRight: 8 }}>
+                Location
+              </StyledButton>
+              <StyledButton variant="outline" icon="filter-variant">
+                More filters
+              </StyledButton>
+            </View>
+          </>
         }
         ListEmptyComponent={
-          !loadingEvents ? (
+          !isFetching ? (
             <View style={styles.centered}>
-              <Text variant="headlineSmall">No upcoming public events.</Text>
-              <Text variant="bodyMedium">
+              <StyledText variant="titleMedium">
+                No upcoming events found.
+              </StyledText>
+              <StyledText variant="bodyMedium">
                 Check back later or create an event!
-              </Text>
+              </StyledText>
             </View>
           ) : null
         }
-        contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={isFetching && !isLoading}
             onRefresh={onRefresh}
             colors={[theme.colors.primary]}
-            tintColor={theme.colors.primary}
           />
         }
+        contentContainerStyle={styles.listContent}
       />
-      {/* FAB for creating events was removed as per your request for this screen
-      <FAB
-        style={styles.fab}
-        icon="plus"
-        label="New Event"
-        onPress={() => navigation.navigate('CreateEventScreen')}
-      />
-      */}
     </View>
   );
 };
 
-const getStyles = (theme: MD3Theme) =>
+const getStyles = (theme: AppTheme) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
     centered: {
@@ -253,6 +183,8 @@ const getStyles = (theme: MD3Theme) =>
       justifyContent: "center",
       alignItems: "center",
       padding: 20,
+      backgroundColor: theme.colors.background,
+      gap: theme.spacing.x_small,
     },
     listHeader: {
       paddingHorizontal: 16,
@@ -291,6 +223,15 @@ const getStyles = (theme: MD3Theme) =>
     chipText: { color: theme.colors.onSecondaryContainer },
     fab: { position: "absolute", margin: 16, right: 0, bottom: 0 },
     loader: { flex: 1, justifyContent: "center", alignItems: "center" }, // Not explicitly used if using centered
+    sectionHeader: {
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 8,
+      fontSize: 14,
+      fontWeight: "bold",
+      color: theme.colors.onSurfaceVariant,
+      backgroundColor: theme.colors.surface,
+    },
   });
 
 export default EventsScreen;

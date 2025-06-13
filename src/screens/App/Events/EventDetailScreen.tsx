@@ -1,10 +1,5 @@
 // src/screens/App/Events/EventDetailScreen.tsx
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useLayoutEffect,
-} from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -15,240 +10,107 @@ import {
   Platform,
   Alert,
 } from "react-native";
-import {
-  Text,
-  Title,
-  Paragraph,
-  Chip,
-  Button,
-  ActivityIndicator,
-  useTheme,
-  MD3Theme,
-  Divider,
-  Caption,
-  Avatar,
-  IconButton,
-  Snackbar,
-} from "react-native-paper";
+import { Chip, ActivityIndicator, Divider, Snackbar } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainAppStackParamList } from "../../../navigation/types"; // Adjust path
-import { supabase } from "../../../lib/supabase"; // Adjust path
+import { MainAppStackParamList } from "../../../navigation/types";
+import { supabase } from "../../../lib/supabase";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-import { useFocusEffect } from "@react-navigation/native";
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  fetchEventDetails,
+  requestToJoinEvent,
+  upsertRsvpStatus,
+  deleteRsvp,
+} from "../../../services/eventService";
+import type { DetailedEventData } from "../../../types/eventTypes";
+import { AppTheme, useAppTheme } from "../../../theme/theme";
+import StyledIconButton from "../../../components/ui/IconButton";
+import StyledText from "../../../components/ui/StyledText";
+import StyledButton from "../../../components/ui/StyledButton";
+import IconText from "../../../components/ui/IconText";
+import AvatarList from "../../../components/ui/AvatarList";
 
-// --- Type Definitions ---
-export type SportTypeStub = {
-  id: string;
-  name: string;
-};
-
-export type ProfileStub = {
-  id: string;
-  username: string | null;
-  avatar_url: string | null;
-};
-
-export type EventParticipant = {
-  user_id: string;
-  status: "attending" | "interested" | "declined" | "waitlisted";
-  profiles: ProfileStub | null; // After processing, this will be a single object
-};
-
-export type DetailedEventData = {
-  id: string;
-  name: string;
-  description: string | null;
-  start_time: string; // ISO string
-  end_time: string | null; // ISO string
-  location_text: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  map_derived_address: string | null;
-  privacy: "public" | "private" | "controlled";
-  club_id: string | null;
-  created_by_user_id: string;
-  max_participants: number | null;
-  cover_image_url: string | null;
-  is_recurring: boolean;
-  recurrence_rule: string | null;
-  recurrence_end_date: string | null; // Date string YYYY-MM-DD
-  sport_specific_attributes: Record<string, any> | null; // JSONB
-  created_at: string;
-
-  // Joined data (processed to be single objects or clean arrays)
-  creator_profile: ProfileStub | null;
-  host_club: { id: string; name: string } | null;
-  event_sport_types: Array<{ sport_types: SportTypeStub | null }> | null;
-  event_participants: EventParticipant[] | null;
-};
-
-// --- Props ---
 type Props = NativeStackScreenProps<MainAppStackParamList, "EventDetailScreen">;
 
 const EventDetailScreen = ({ route, navigation }: Props) => {
-  const { eventId, eventName } = route.params;
-  const theme = useTheme<MD3Theme>();
-  const styles = React.useMemo(() => getStyles(theme), [theme]);
+  const { eventId, eventName: routeEventName } = route.params;
+  const theme = useAppTheme();
+  const styles = useMemo(() => getStyles(theme), [theme]);
+  const queryClient = useQueryClient();
 
-  const [event, setEvent] = useState<DetailedEventData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false); // For RSVP buttons
-  const [error, setError] = useState<string | null>(null);
   const [currentUserAuthId, setCurrentUserAuthId] = useState<string | null>(
     null
   );
-  const [currentUserParticipation, setCurrentUserParticipation] =
-    useState<EventParticipant | null>(null);
-  const [canManageEvent, setCanManageEvent] = useState(false); // For showing settings gear
+  const [canManageEvent, setCanManageEvent] = useState(false);
 
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
 
-  const fetchEventDetails = useCallback(
-    async (authId: string | null) => {
-      setLoading(true);
-      setError(null);
-      console.log(
-        `[EventDetailScreen] Fetching event ${eventId} for user ${authId}`
-      );
-      try {
-        const { data: rawEventData, error: eventError } = await supabase
-          .from("events")
-          .select(
-            `
-        *,
-        creator_profile:profiles!events_created_by_user_id_fkey (id, username, avatar_url),
-        host_club:clubs!events_club_id_fkey (id, name),
-        event_sport_types ( sport_types!inner (id, name) ),
-        event_participants ( user_id, status, profiles!inner (id, username, avatar_url) )
-      `
-          )
-          .eq("id", eventId)
-          .single();
+  // Get current user ID
+  useEffect(() => {
+    const getUserId = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setCurrentUserAuthId(user?.id || null);
+    };
+    getUserId();
+  }, []);
 
-        if (eventError) throw eventError;
-        if (!rawEventData) {
-          setError("Event not found.");
-          setLoading(false);
-          return;
-        }
+  // Fetch event details using useQuery
+  const {
+    data: event,
+    isLoading: isLoadingEvent,
+    isError: isEventError,
+    error: eventFetchError,
+    refetch: refetchEventDetails,
+  } = useQuery<
+    DetailedEventData | null,
+    Error,
+    DetailedEventData | null,
+    [string, string, string | null]
+  >({
+    queryKey: ["eventDetails", eventId, currentUserAuthId], // Add currentUserAuthId to key
+    queryFn: () => fetchEventDetails(eventId, currentUserAuthId), // Pass currentUserAuthId
+    enabled: !!eventId && currentUserAuthId !== undefined, // Enable when both are available (currentUserAuthId can be null initially)
+  });
 
-        const fe = rawEventData as any;
-        // Process to ensure nested related records are single objects if that's the expectation
-        const processedCreatorProfile =
-          fe.creator_profile && !Array.isArray(fe.creator_profile)
-            ? fe.creator_profile
-            : null;
-        const processedHostClub =
-          fe.host_club && !Array.isArray(fe.host_club) ? fe.host_club : null;
+  // Determine user's participation and management rights once event data and authId are available
+  const currentUserParticipation = useMemo(() => {
+    if (!currentUserAuthId || !event || !event.event_participants) return null;
+    return (
+      event.event_participants.find((p) => p.user_id === currentUserAuthId) ||
+      null
+    );
+  }, [currentUserAuthId, event]);
 
-        const processedSportTypes = (fe.event_sport_types || [])
-          .map((est: any) => ({
-            sport_types:
-              est.sport_types && !Array.isArray(est.sport_types)
-                ? est.sport_types
-                : Array.isArray(est.sport_types) && est.sport_types.length > 0
-                ? est.sport_types[0]
-                : null,
-          }))
-          .filter((est: any) => est.sport_types !== null);
-
-        const processedParticipants = (fe.event_participants || []).map(
-          (p: any) => ({
-            user_id: p.user_id,
-            status: p.status,
-            profiles:
-              p.profiles && !Array.isArray(p.profiles)
-                ? p.profiles
-                : Array.isArray(p.profiles) && p.profiles.length > 0
-                ? p.profiles[0]
-                : null,
-          })
-        );
-
-        const detailedEvent: DetailedEventData = {
-          id: fe.id,
-          name: fe.name,
-          description: fe.description,
-          start_time: fe.start_time,
-          end_time: fe.end_time,
-          location_text: fe.location_text,
-          latitude: fe.latitude,
-          longitude: fe.longitude,
-          map_derived_address: fe.map_derived_address,
-          privacy: fe.privacy,
-          club_id: fe.club_id,
-          created_by_user_id: fe.created_by_user_id,
-          max_participants: fe.max_participants,
-          cover_image_url: fe.cover_image_url,
-          is_recurring: fe.is_recurring,
-          recurrence_rule: fe.recurrence_rule,
-          recurrence_end_date: fe.recurrence_end_date,
-          sport_specific_attributes: fe.sport_specific_attributes,
-          created_at: fe.created_at,
-          creator_profile: processedCreatorProfile,
-          host_club: processedHostClub,
-          event_sport_types:
-            processedSportTypes.length > 0 ? processedSportTypes : null,
-          event_participants: processedParticipants,
-        };
-        setEvent(detailedEvent);
-
-        if (authId && detailedEvent.event_participants) {
-          const userParticipation = detailedEvent.event_participants.find(
-            (p) => p.user_id === authId
-          );
-          setCurrentUserParticipation(userParticipation || null);
-        } else {
-          setCurrentUserParticipation(null);
-        }
-
-        // Determine if current user can manage this event
-        let canManage = detailedEvent.created_by_user_id === authId;
-        if (!canManage && detailedEvent.club_id && authId) {
-          // More robust check: Call a DB function or fetch club membership role
-          const { data: staffStatus, error: staffError } = await supabase.rpc(
-            "is_user_club_staff",
-            { p_user_id: authId, p_club_id: detailedEvent.club_id }
-          );
-          if (staffError)
-            console.error("Error checking club staff status:", staffError);
-          if (staffStatus) canManage = true;
-        }
-        setCanManageEvent(canManage);
-      } catch (e: any) {
-        console.error("Error fetching event details:", e);
-        setError(e.message || "Failed to load details.");
-        setEvent(null);
-      } finally {
-        setLoading(false);
+  useEffect(() => {
+    // Effect to set screen title and canManageEvent
+    if (event) {
+      navigation.setOptions({
+        title: event.name || routeEventName || "Event Details",
+      });
+      let canManage = event.created_by_user_id === currentUserAuthId;
+      if (!canManage && event.club_id && currentUserAuthId) {
+        // Simple check for now: if it's a club event and user is the creator OR if user is club staff
+        // For a more robust club staff check, is_user_club_staff RPC could be called here
+        // or fetched as part of user's profile/permissions globally.
+        // For now, just creator. Club staff check should be done if navigating to settings.
       }
-    },
-    [eventId]
-  );
+      setCanManageEvent(canManage);
+    } else if (!isLoadingEvent) {
+      // If not loading and no event, use initial name
+      navigation.setOptions({ title: routeEventName || "Event Details" });
+    }
+  }, [navigation, event, routeEventName, currentUserAuthId]);
 
-  useFocusEffect(
-    useCallback(() => {
-      const getAuthAndFetch = async () => {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        const authId = user?.id || null;
-        setCurrentUserAuthId(authId); // Set this first
-        await fetchEventDetails(authId); // Then fetch details using it
-      };
-      getAuthAndFetch();
-    }, [fetchEventDetails])
-  );
-
+  // useLayoutEffect for settings gear icon (depends on canManageEvent)
   useLayoutEffect(() => {
     if (event && canManageEvent) {
-      // Only show gear icon if user can manage
       navigation.setOptions({
-        title: event.name || eventName || "Event Details", // Ensure eventName fallback if event.name is temp null
         headerRight: () => (
-          <IconButton
+          <StyledIconButton
             icon="cog-outline"
             size={26}
             onPress={() =>
@@ -259,27 +121,46 @@ const EventDetailScreen = ({ route, navigation }: Props) => {
                 createdByUserId: event.created_by_user_id,
               })
             }
+            iconColor={theme.colors.onSurface}
           />
         ),
       });
-    } else if (event) {
-      // Event loaded, but user cannot manage
-      navigation.setOptions({
-        title: event.name || eventName || "Event Details",
-        headerRight: undefined, // No gear icon
-      });
     } else {
-      // Initial state or error
-      navigation.setOptions({
-        title: eventName || "Event Details",
-        headerRight: undefined,
-      });
+      navigation.setOptions({ headerRight: undefined });
     }
-  }, [navigation, event, eventName, canManageEvent, theme.colors.onSurface]);
+  }, [navigation, event, canManageEvent, theme.colors.onSurface]);
 
-  const handleRsvp = async (
-    newStatus: "attending" | "interested" | "declined"
-  ) => {
+  // Mutation for RSVP
+  const rsvpMutation = useMutation({
+    mutationFn: upsertRsvpStatus,
+    onSuccess: (data, variables) => {
+      setSnackbarMessage(
+        `Your RSVP updated to: ${
+          variables.status.charAt(0).toUpperCase() + variables.status.slice(1)
+        }`
+      );
+      setSnackbarVisible(true);
+      queryClient.invalidateQueries({ queryKey: ["eventDetails", eventId] });
+    },
+    onError: (error: Error) => {
+      Alert.alert("RSVP Error", error.message || "Could not update your RSVP.");
+    },
+  });
+
+  const deleteRsvpMutation = useMutation({
+    mutationFn: deleteRsvp, // Uses delete for leaving
+    onSuccess: () => {
+      setSnackbarMessage(`You are no longer attending.`);
+      setSnackbarVisible(true);
+      queryClient.invalidateQueries({
+        queryKey: ["eventDetails", eventId, currentUserAuthId],
+      });
+    },
+    onError: (error: Error) =>
+      Alert.alert("Error Leaving Event", error.message),
+  });
+
+  const handleRsvp = (newStatus: "attending" | "interested" | "declined") => {
     if (!currentUserAuthId || !event) {
       Alert.alert("Error", "Cannot RSVP: Missing user or event data.");
       return;
@@ -295,39 +176,59 @@ const EventDetailScreen = ({ route, navigation }: Props) => {
       ) {
         Alert.alert(
           "Event Full",
-          "This event has reached its maximum number of participants."
+          "This event has reached its maximum participants."
         );
         return;
       }
     }
-    setActionLoading(true);
-    setError(null);
-    try {
-      const { error: rsvpError } = await supabase
-        .from("event_participants")
-        .upsert(
-          {
-            event_id: event.id,
-            user_id: currentUserAuthId,
-            status: newStatus,
-            registered_at: new Date().toISOString(),
-          },
-          { onConflict: "event_id, user_id" }
-        );
-      if (rsvpError) throw rsvpError;
-      setSnackbarMessage(
-        `Your RSVP updated to: ${
-          newStatus.charAt(0).toUpperCase() + newStatus.slice(1)
-        }`
-      );
+    rsvpMutation.mutate({
+      eventId: event.id,
+      userId: currentUserAuthId,
+      status: newStatus,
+    });
+  };
+
+  const handleLeaveEvent = () => {
+    if (!currentUserAuthId || !event) return;
+    Alert.alert("Leave Event", "Are you sure you want to leave this event?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Leave",
+        style: "destructive",
+        onPress: () => {
+          deleteRsvpMutation.mutate({
+            eventId: event.id,
+            userId: currentUserAuthId!,
+          });
+        },
+      },
+    ]);
+  };
+
+  const requestToJoinMutation = useMutation({
+    mutationFn: requestToJoinEvent,
+    onSuccess: () => {
+      setSnackbarMessage("Your request to join has been sent!");
       setSnackbarVisible(true);
-      if (currentUserAuthId) fetchEventDetails(currentUserAuthId); // Refresh details
-    } catch (e: any) {
-      setError(e.message || "Failed to update RSVP.");
-      Alert.alert("RSVP Error", e.message || "Could not update your RSVP.");
-    } finally {
-      setActionLoading(false);
-    }
+      // Refetch event details to update pending request status and button UI
+      queryClient.invalidateQueries({
+        queryKey: ["eventDetails", eventId, currentUserAuthId],
+      });
+    },
+    onError: (error: Error) => {
+      Alert.alert(
+        "Request Error",
+        error.message || "Could not send your request."
+      );
+    },
+  });
+
+  const handleRequestToJoinEvent = () => {
+    if (!currentUserAuthId || !event) return;
+    requestToJoinMutation.mutate({
+      eventId: event.id,
+      userId: currentUserAuthId,
+    });
   };
 
   const formatDateTimeRange = (startIso?: string, endIso?: string | null) => {
@@ -370,31 +271,39 @@ const EventDetailScreen = ({ route, navigation }: Props) => {
     });
   };
 
-  if (loading) {
+  // --- Loading and Error States ---
+  if (isLoadingEvent) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator animating={true} size="large" />
-        <Text style={{ marginTop: 10 }}>Loading event...</Text>
+        <StyledText>Loading event...</StyledText>
       </View>
     );
   }
-  if (error || !event) {
+  if (isEventError && eventFetchError) {
     return (
       <View style={styles.centered}>
-        <Text style={{ color: theme.colors.error, textAlign: "center" }}>
-          {error || "Event could not be loaded."}
-        </Text>
-        <Button
-          onPress={() => {
-            if (currentUserAuthId) fetchEventDetails(currentUserAuthId);
-          }}
-        >
+        <StyledText style={{ color: theme.colors.error, textAlign: "center" }}>
+          Error: {eventFetchError.message}
+        </StyledText>
+        <StyledButton onPress={() => refetchEventDetails()}>
           Try Again
-        </Button>
+        </StyledButton>
+      </View>
+    );
+  }
+  if (!event) {
+    return (
+      <View style={styles.centered}>
+        <StyledText>Event not found.</StyledText>
+        <StyledButton onPress={() => refetchEventDetails()}>
+          Try Again
+        </StyledButton>
       </View>
     );
   }
 
+  // --- Derived data for rendering ---
   const { datePart, timePart } = formatDateTimeRange(
     event.start_time,
     event.end_time
@@ -403,79 +312,157 @@ const EventDetailScreen = ({ route, navigation }: Props) => {
     event.event_participants?.filter((p) => p.status === "attending") || [];
 
   let rsvpActionSection = null;
-  if (currentUserAuthId) {
-    // Only show RSVP if user is logged in
-    if (currentUserParticipation?.status === "attending") {
+  if (currentUserAuthId && event) {
+    const isCurrentlyAttending =
+      currentUserParticipation?.status === "attending";
+    const isCurrentlyInterested =
+      currentUserParticipation?.status === "interested";
+
+    // isOrganizer includes event creator OR club staff for club events
+    const isOrganizer = canManageEvent;
+
+    if (isOrganizer) {
+      if (isCurrentlyAttending) {
+        rsvpActionSection = (
+          <View style={styles.rsvpButtonRow}>
+            <Chip icon="account-tie" style={styles.statusChipOrganizing}>
+              Organizing & Attending
+            </Chip>
+            <StyledButton
+              variant="outline"
+              onPress={handleLeaveEvent}
+              loading={rsvpMutation.isPending}
+              disabled={rsvpMutation.isPending}
+            >
+              Can't Go
+            </StyledButton>
+          </View>
+        );
+      } else {
+        // Organizer not yet attending (e.g., club staff who didn't create it)
+        rsvpActionSection = (
+          <View style={styles.rsvpButtonRow}>
+            <StyledButton
+              icon="check"
+              onPress={() => handleRsvp("attending")}
+              loading={rsvpMutation.isPending}
+              disabled={rsvpMutation.isPending}
+            >
+              Confirm My Attendance
+            </StyledButton>
+            {/* Optionally, an "Interested" button for organizers */}
+            {!isCurrentlyInterested && (
+              <StyledButton
+                variant="outline"
+                icon="star-outline"
+                onPress={() => handleRsvp("interested")}
+                loading={rsvpMutation.isPending}
+                disabled={rsvpMutation.isPending}
+              >
+                Interested
+              </StyledButton>
+            )}
+          </View>
+        );
+      }
+    } else if (isCurrentlyAttending) {
+      // Regular user who is attending
       rsvpActionSection = (
         <View style={styles.rsvpButtonRow}>
-          <Chip
-            icon="check-circle"
-            style={styles.statusChipCurrent}
-            textStyle={styles.statusChipTextCurrent}
-          >
+          <Chip icon="check-circle" style={styles.statusChipCurrent}>
             You are Attending
           </Chip>
-          <Button
-            mode="outlined"
-            onPress={() => handleRsvp("declined")}
-            style={styles.rsvpButtonSecondary}
-            loading={actionLoading}
-            disabled={actionLoading}
+          <StyledButton
+            variant="outline"
+            icon="account-remove-outline"
+            onPress={handleLeaveEvent}
+            loading={rsvpMutation.isPending}
+            disabled={rsvpMutation.isPending}
           >
             Can't Go
-          </Button>
+          </StyledButton>
         </View>
       );
-    } else if (currentUserParticipation?.status === "interested") {
+    } else if (isCurrentlyInterested) {
+      // Regular user who is interested
       rsvpActionSection = (
         <View style={styles.rsvpButtonRow}>
-          <Button
-            mode="contained"
+          <StyledButton
             icon="check"
             onPress={() => handleRsvp("attending")}
-            style={styles.rsvpButtonPrimary}
-            loading={actionLoading}
-            disabled={actionLoading}
+            loading={rsvpMutation.isPending}
+            disabled={rsvpMutation.isPending}
           >
             Attend
-          </Button>
-          <Button
-            mode="outlined"
-            onPress={() => handleRsvp("declined")}
-            style={styles.rsvpButtonSecondary}
-            loading={actionLoading}
-            disabled={actionLoading}
+          </StyledButton>
+          <StyledButton
+            variant="secondary"
+            onPress={handleLeaveEvent}
+            loading={rsvpMutation.isPending}
+            disabled={rsvpMutation.isPending}
           >
             Not Interested
-          </Button>
+          </StyledButton>
         </View>
       );
     } else {
-      // Not participating or declined
-      rsvpActionSection = (
-        <View style={styles.rsvpButtonRow}>
-          <Button
-            mode="contained"
-            icon="check"
-            onPress={() => handleRsvp("attending")}
-            style={styles.rsvpButtonPrimary}
-            loading={actionLoading}
-            disabled={actionLoading}
-          >
-            Attend Event
-          </Button>
-          <Button
-            mode="outlined"
-            icon="star-outline"
-            onPress={() => handleRsvp("interested")}
-            style={styles.rsvpButtonSecondary}
-            loading={actionLoading}
-            disabled={actionLoading}
-          >
-            Interested
-          </Button>
-        </View>
-      );
+      // Not attending, not interested, and not an organizer (or organizer who hasn't RSVP'd yet)
+      if (event.privacy === "public") {
+        rsvpActionSection = (
+          <View style={styles.rsvpButtonRow}>
+            <StyledButton
+              icon="check"
+              onPress={() => handleRsvp("attending")}
+              loading={rsvpMutation.isPending}
+              disabled={rsvpMutation.isPending}
+            >
+              Attend Event
+            </StyledButton>
+            <StyledButton
+              variant="outline"
+              icon="star-outline"
+              onPress={() => handleRsvp("interested")}
+              loading={rsvpMutation.isPending}
+              disabled={rsvpMutation.isPending}
+            >
+              Interested
+            </StyledButton>
+          </View>
+        );
+      } else if (event.privacy === "controlled") {
+        if (requestToJoinMutation.isPending) {
+          // checkingJoinRequestStatus state is from previous step
+          rsvpActionSection = (
+            <StyledButton loading={true} disabled={true}>
+              Checking Status...
+            </StyledButton>
+          );
+        } else if (event.currentUserPendingJoinRequest) {
+          // pendingJoinRequest state is from previous step
+          rsvpActionSection = (
+            <Chip icon="clock-outline" style={styles.statusChipPending}>
+              Request Pending
+            </Chip>
+          );
+        } else {
+          rsvpActionSection = (
+            <StyledButton
+              icon="account-plus-outline"
+              onPress={handleRequestToJoinEvent}
+              loading={rsvpMutation.isPending}
+              disabled={rsvpMutation.isPending}
+            >
+              Request to Join
+            </StyledButton>
+          );
+        }
+      } else if (event.privacy === "private") {
+        rsvpActionSection = (
+          <Chip icon="lock" style={styles.statusChipPrivate}>
+            Event is Private / Invite Only
+          </Chip>
+        );
+      }
     }
   }
 
@@ -522,101 +509,73 @@ const EventDetailScreen = ({ route, navigation }: Props) => {
 
       <View style={styles.contentContainer}>
         <View style={styles.headerSection}>
-          <Text style={styles.timeText}>{timePart}</Text>
-          <Text style={styles.dateText}>{datePart.toUpperCase()}</Text>
-          <Title style={styles.eventName}>{event.name}</Title>
-          {event.host_club ? (
+          <StyledText>{timePart}</StyledText>
+          <StyledText>{datePart.toUpperCase()}</StyledText>
+          <StyledText variant="titleMedium">{event.name}</StyledText>
+          {event.host_club_name ? (
             <TouchableOpacity
               onPress={() =>
                 navigation.navigate("ClubDetail", {
-                  clubId: event.host_club!.id,
+                  clubId: event.club_id!,
                 })
               }
             >
-              <Text style={styles.organizerText}>
+              <StyledText>
                 Organised by:{" "}
-                <Text
+                <StyledText
                   style={{ fontWeight: "bold", color: theme.colors.primary }}
                 >
-                  {event.host_club.name}
-                </Text>
-              </Text>
+                  {event.host_club_name}
+                </StyledText>
+              </StyledText>
             </TouchableOpacity>
           ) : (
             event.creator_profile && (
-              <Text style={styles.organizerText}>
+              <StyledText>
                 Organised by:{" "}
-                <Text style={{ fontWeight: "bold" }}>
+                <StyledText style={{ fontWeight: "bold" }}>
                   {event.creator_profile.username || "A user"}
-                </Text>
-              </Text>
+                </StyledText>
+              </StyledText>
             )
           )}
         </View>
 
         <View style={styles.metricsGrid}>
           {event.sport_specific_attributes?.distance_km != null && (
-            <View style={styles.metricItem}>
-              <MaterialCommunityIcons
-                name="map-marker-distance"
-                size={24}
-                color={theme.colors.primary}
-              />
-              <Text style={styles.metricValue}>
-                {event.sport_specific_attributes.distance_km} km
-              </Text>
-              <Caption style={styles.metricLabel}>Distance</Caption>
-            </View>
+            <IconText
+              icon="map-marker-distance"
+              label={`${event.sport_specific_attributes?.distance_km} km`}
+            />
           )}
           {event.sport_specific_attributes?.pace_seconds_per_km != null && (
-            <View style={styles.metricItem}>
-              <MaterialCommunityIcons
-                name="speedometer"
-                size={24}
-                color={theme.colors.primary}
-              />
-              <Text style={styles.metricValue}>
-                {Math.floor(
-                  event.sport_specific_attributes.pace_seconds_per_km / 60
-                )}
-                :
-                {(event.sport_specific_attributes.pace_seconds_per_km % 60)
-                  .toString()
-                  .padStart(2, "0")}
-              </Text>
-              <Caption style={styles.metricLabel}>Pace/km</Caption>
-            </View>
+            <IconText
+              icon="speedometer"
+              label={`${Math.floor(
+                event.sport_specific_attributes.pace_seconds_per_km / 60
+              )}:${(event.sport_specific_attributes.pace_seconds_per_km % 60)
+                .toString()
+                .padStart(2, "0")} min/km`}
+            />
           )}
           {event.end_time && (
-            <View style={styles.metricItem}>
-              <MaterialCommunityIcons
-                name="clock-end"
-                size={24}
-                color={theme.colors.primary}
-              />
-              <Text style={styles.metricValue}>
-                {new Date(event.end_time).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </Text>
-              <Caption style={styles.metricLabel}>Ends At</Caption>
-            </View>
-          )}
-          <View style={styles.metricItem}>
-            <MaterialCommunityIcons
-              name="account-group"
-              size={24}
-              color={theme.colors.primary}
+            <IconText
+              icon="clock-end"
+              label={`${new Date(event.end_time).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })} end time`}
             />
-            <Text style={styles.metricValue}>
-              {attendingParticipants.length}
-              {event.max_participants !== null
-                ? ` / ${event.max_participants}`
-                : ""}
-            </Text>
-            <Caption style={styles.metricLabel}>Attending</Caption>
-          </View>
+          )}
+          <IconText
+            icon="account-group"
+            label={`${attendingParticipants.length}
+              ${
+                event.max_participants !== null
+                  ? ` / ${event.max_participants}`
+                  : ""
+              } participants`}
+          />
         </View>
 
         {currentUserAuthId && rsvpActionSection}
@@ -625,14 +584,14 @@ const EventDetailScreen = ({ route, navigation }: Props) => {
 
         {event.description && (
           <View style={styles.section}>
-            <Title style={styles.sectionTitle}>About this Event</Title>
-            <Paragraph style={styles.paragraph}>{event.description}</Paragraph>
+            <StyledText variant="titleSmall">About this Event</StyledText>
+            <StyledText>{event.description}</StyledText>
           </View>
         )}
 
         {event.event_sport_types && event.event_sport_types.length > 0 && (
           <View style={styles.section}>
-            <Title style={styles.sectionTitle}>Sports</Title>
+            <StyledText variant="titleSmall">Sports</StyledText>
             <View style={styles.chipContainer}>
               {event.event_sport_types.map((est, index) => {
                 const sportTypeData = est.sport_types; // From processed data, this is SportTypeStub | null
@@ -654,7 +613,9 @@ const EventDetailScreen = ({ route, navigation }: Props) => {
           event.location_text ||
           (event.latitude && event.longitude)) && (
           <View style={styles.section}>
-            <Title style={styles.sectionTitle}>Location & Meeting Point</Title>
+            <StyledText variant="titleSmall">
+              Location & Meeting Point
+            </StyledText>
             {event.map_derived_address && (
               <TouchableOpacity onPress={openMapLink}>
                 <View style={styles.detailRow}>
@@ -663,25 +624,12 @@ const EventDetailScreen = ({ route, navigation }: Props) => {
                     size={22}
                     color={theme.colors.primary}
                   />
-                  <Text
-                    style={[
-                      styles.detailValueLarge,
-                      {
-                        color: theme.colors.primary,
-                        textDecorationLine: "underline",
-                      },
-                    ]}
-                  >
-                    {event.map_derived_address}
-                  </Text>
+                  <StyledText>{event.map_derived_address}</StyledText>
                 </View>
               </TouchableOpacity>
             )}
             {event.location_text && (
-              <Paragraph style={styles.locationDetailText}>
-                <Text style={styles.detailLabel}>Details: </Text>
-                {event.location_text}
-              </Paragraph>
+              <StyledText>{event.location_text}</StyledText>
             )}
 
             {event.latitude && event.longitude && (
@@ -716,59 +664,36 @@ const EventDetailScreen = ({ route, navigation }: Props) => {
 
         {event.is_recurring && (
           <View style={styles.section}>
-            <Title style={styles.sectionTitle}>Recurrence</Title>
-            <Paragraph style={styles.detailTextItem}>
-              <Text style={styles.detailLabel}>This event repeats.</Text>
-            </Paragraph>
-            {event.recurrence_rule && (
-              <Paragraph style={styles.detailTextItem}>
-                <Text style={styles.detailLabel}>Pattern: </Text>
-                {event.recurrence_rule}
-              </Paragraph>
-            )}
-            {event.recurrence_end_date && (
-              <Paragraph style={styles.detailTextItem}>
-                <Text style={styles.detailLabel}>Ends on: </Text>
-                {formatDate(event.recurrence_end_date)}
-              </Paragraph>
-            )}
+            <StyledText variant="titleSmall">Recurrence</StyledText>
+            <StyledText>This event repeats.</StyledText>
           </View>
         )}
 
         <View style={styles.section}>
-          <Title style={styles.sectionTitle}>
-            Who's Going? ({attendingParticipants.length})
-          </Title>
-          {attendingParticipants.length > 0 ? (
-            attendingParticipants.slice(0, 5).map(
-              (
-                participant // Show first 5 attendees
-              ) => (
-                <View key={participant.user_id} style={styles.memberItem}>
-                  <Avatar.Text
-                    size={36}
-                    label={
-                      participant.profiles?.username
-                        ?.substring(0, 2)
-                        .toUpperCase() || "??"
-                    }
-                    style={[
-                      styles.avatar,
-                      { backgroundColor: theme.colors.secondaryContainer },
-                    ]}
-                    color={theme.colors.onSecondaryContainer}
-                  />
-                  <Text style={styles.memberName}>
-                    {participant.profiles?.username ||
-                      `User ${participant.user_id.substring(0, 6)}`}
-                  </Text>
-                </View>
-              )
+          <StyledText variant="titleSmall">
+            Who's Going? ({attendingParticipants.length}
+            {event.max_participants !== null
+              ? ` / ${event.max_participants}`
+              : ""}
             )
+          </StyledText>
+          {attendingParticipants.length > 0 ? (
+            <AvatarList
+              profiles={attendingParticipants.map(
+                (participant) => participant.profiles
+              )}
+            />
           ) : (
-            <Paragraph>No one is attending yet. Be the first!</Paragraph>
+            <StyledText>
+              No one has RSVP'd as 'attending' yet.
+              {event.privacy === "public" &&
+                (!currentUserParticipation ||
+                  currentUserParticipation.status !== "attending") &&
+                " Be the first!"}
+            </StyledText>
           )}
-          {/* TODO: "View all participants" button if many participants */}
+          {/* TODO: Add a "View all X attendees" button if desired, which could navigate
+            to a new screen listing all participants if the list is long. */}
         </View>
       </View>
       <Snackbar
@@ -783,7 +708,7 @@ const EventDetailScreen = ({ route, navigation }: Props) => {
   );
 };
 
-const getStyles = (theme: MD3Theme) =>
+const getStyles = (theme: AppTheme) =>
   StyleSheet.create({
     scrollView: { flex: 1, backgroundColor: theme.colors.background },
     coverImage: {
@@ -798,33 +723,6 @@ const getStyles = (theme: MD3Theme) =>
       marginVertical: 16,
       paddingHorizontal: 10,
     },
-    dateText: {
-      fontSize: 14,
-      color: theme.colors.onSurfaceVariant,
-      textTransform: "uppercase",
-      marginBottom: 2,
-      fontWeight: "500",
-    },
-    timeText: {
-      fontSize: 18,
-      color: theme.colors.onSurface,
-      marginBottom: 8,
-      fontWeight: "bold",
-    },
-    eventName: {
-      fontSize: 28,
-      fontWeight: "bold",
-      textAlign: "center",
-      color: theme.colors.onSurface,
-      marginBottom: 4,
-      lineHeight: 34,
-    },
-    organizerText: {
-      fontSize: 15,
-      color: theme.colors.onSurfaceVariant,
-      marginBottom: 16,
-      textAlign: "center",
-    },
 
     metricsGrid: {
       flexDirection: "row",
@@ -837,26 +735,6 @@ const getStyles = (theme: MD3Theme) =>
       borderRadius: theme.roundness * 2,
       paddingHorizontal: 5,
     },
-    metricItem: {
-      alignItems: "center",
-      justifyContent: "center",
-      minWidth: 80,
-      paddingVertical: 8,
-      paddingHorizontal: 5,
-      margin: 4,
-    },
-    metricValue: {
-      fontSize: 16,
-      fontWeight: "bold",
-      color: theme.colors.onSurface,
-      textAlign: "center",
-    },
-    metricLabel: {
-      fontSize: 12,
-      color: theme.colors.onSurfaceDisabled,
-      textAlign: "center",
-      marginTop: 2,
-    },
 
     primaryActionContainer: {
       marginVertical: 16,
@@ -868,17 +746,10 @@ const getStyles = (theme: MD3Theme) =>
       justifyContent: "space-around",
       alignItems: "center",
     },
-    rsvpButtonPrimary: { flex: 1, marginHorizontal: 4 },
-    rsvpButtonSecondary: { flex: 1, marginHorizontal: 4 },
     statusChipCurrent: {
       paddingHorizontal: 10,
       paddingVertical: 6,
       backgroundColor: theme.colors.tertiaryContainer,
-    },
-    statusChipTextCurrent: {
-      fontSize: 16,
-      fontWeight: "bold",
-      color: theme.colors.onTertiaryContainer,
     },
 
     section: {
@@ -887,43 +758,10 @@ const getStyles = (theme: MD3Theme) =>
       borderTopWidth: 1,
       borderTopColor: theme.colors.outlineVariant,
     },
-    sectionTitle: {
-      fontSize: 20,
-      fontWeight: "bold",
-      marginBottom: 12,
-      color: theme.colors.onSurface,
-    },
-    paragraph: {
-      fontSize: 16,
-      lineHeight: 24,
-      color: theme.colors.onSurfaceVariant,
-      marginBottom: 8,
-    },
-    detailTextItem: {
-      fontSize: 16,
-      color: theme.colors.onSurfaceVariant,
-      marginBottom: 4,
-    },
-    detailLabel: { fontWeight: "bold" }, // For inline labels within Paragraphs/Text
     detailRow: {
       flexDirection: "row",
       alignItems: "center", // Vertically align icon and text
       marginBottom: 8, // Spacing below each detail row
-    },
-    detailValue: {
-      // This was the original one I had for general details in cards
-      marginLeft: 10,
-      fontSize: 16,
-      color: theme.colors.onSurfaceVariant,
-      flexShrink: 1, // Allow text to shrink if container is small
-    },
-    detailValueLarge: {
-      // <<< ADD THIS (specifically for location or more prominent details)
-      marginLeft: 10,
-      fontSize: 17, // Slightly larger
-      color: theme.colors.onSurfaceVariant, // Or theme.colors.primary if it's a link as in the example
-      flexShrink: 1,
-      // textDecorationLine: 'underline', // Add this if it should always be underlined, or handle conditionally
     },
 
     chipContainer: { flexDirection: "row", flexWrap: "wrap", marginBottom: 10 },
@@ -932,15 +770,6 @@ const getStyles = (theme: MD3Theme) =>
       marginBottom: 8,
       backgroundColor: theme.colors.secondaryContainer,
     },
-
-    memberItem: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginBottom: 12,
-      paddingVertical: 4,
-    },
-    avatar: { marginRight: 12 },
-    memberName: { fontSize: 16, color: theme.colors.onSurfaceVariant },
 
     centered: {
       flex: 1,
@@ -964,13 +793,20 @@ const getStyles = (theme: MD3Theme) =>
     map: {
       ...StyleSheet.absoluteFillObject, // Makes map fill its container
     },
-    locationDetailText: {
-      // For the optional locationText (additional details)
-      fontSize: 15,
-      lineHeight: 22,
-      color: theme.colors.onSurfaceVariant,
-      marginTop: 4,
-      marginLeft: 32, // Indent if under map marker icon
+    statusChipOrganizing: {
+      alignSelf: "center",
+      backgroundColor: theme.colors.tertiaryContainer,
+      paddingHorizontal: 16,
+    },
+    statusChipPending: {
+      alignSelf: "center",
+      backgroundColor: theme.colors.surfaceVariant,
+      paddingHorizontal: 16,
+    },
+    statusChipPrivate: {
+      alignSelf: "center",
+      backgroundColor: theme.colors.surfaceDisabled,
+      paddingHorizontal: 16,
     },
   });
 

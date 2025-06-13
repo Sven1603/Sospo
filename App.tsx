@@ -1,10 +1,15 @@
 // App.tsx
 import React, { useState, useEffect } from "react";
-import { NavigationContainer } from "@react-navigation/native";
+import {
+  NavigationContainer,
+  DefaultTheme as NavigationDefaultTheme,
+} from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { Provider as PaperProvider, DefaultTheme } from "react-native-paper";
+import { Provider as PaperProvider } from "react-native-paper";
 import { View } from "react-native";
 import { Text } from "react-native-paper";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import * as SplashScreen from "expo-splash-screen";
 
 import AuthNavigator from "./src/navigation/AuthNavigator";
 import MainAppStackNavigator from "./src/navigation/MainAppStackNavigator";
@@ -12,17 +17,27 @@ import { RootStackParamList } from "./src/navigation/types";
 import { supabase } from "./src/lib/supabase";
 import type { Session } from "@supabase/supabase-js";
 import { enGB, registerTranslation } from "react-native-paper-dates";
+import { theme, useAppTheme } from "./src/theme/theme";
+import { useFonts } from "expo-font";
+
 registerTranslation("en-GB", enGB);
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 
-const theme = {
-  /* ... your theme ... */
-}; // Keep your theme definition
+const queryClient = new QueryClient();
 
 export default function App() {
+  const customTheme = useAppTheme();
+
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [fontsLoaded, fontError] = useFonts({
+    "LeagueSpartan-Regular": require("./assets/fonts/LeagueSpartan-Regular.ttf"),
+    // 'LeagueSpartan-Medium': require('./assets/fonts/LeagueSpartan-Medium.ttf'),
+    "LeagueSpartan-SemiBold": require("./assets/fonts/LeagueSpartan-SemiBold.ttf"),
+    // 'LeagueSpartan-Bold': require('./assets.fonts/LeagueSpartan-Bold.ttf'),
+  });
 
   useEffect(() => {
     setLoading(true);
@@ -42,6 +57,29 @@ export default function App() {
     };
   }, []);
 
+  const onLayoutRootView = React.useCallback(async () => {
+    if (fontsLoaded || fontError) {
+      // Hide the splash screen once fonts are loaded or an error occurs
+      await SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null; // Or return a custom loading component
+  }
+
+  const navigationTheme = {
+    ...NavigationDefaultTheme,
+    colors: {
+      ...NavigationDefaultTheme.colors,
+      primary: customTheme.colors.primary, // e.g., the color of active tab icons
+      background: customTheme.colors.background, // The background of screens
+      card: customTheme.colors.surface, // The background of headers and tab bars
+      text: customTheme.colors.onSurface, // The default text color in headers
+      border: customTheme.colors.outlineVariant, // The border color (e.g., header bottom border)
+    },
+  };
+
   if (loading) {
     return (
       <PaperProvider theme={theme}>
@@ -55,19 +93,23 @@ export default function App() {
   }
 
   return (
-    <PaperProvider theme={theme}>
-      <NavigationContainer>
-        <RootStack.Navigator screenOptions={{ headerShown: false }}>
-          {session && session.user ? (
-            <RootStack.Screen
-              name="MainAppStack"
-              component={MainAppStackNavigator}
-            /> // Use MainAppStack here
-          ) : (
-            <RootStack.Screen name="Auth" component={AuthNavigator} />
-          )}
-        </RootStack.Navigator>
-      </NavigationContainer>
-    </PaperProvider>
+    <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+      <QueryClientProvider client={queryClient}>
+        <PaperProvider theme={theme}>
+          <NavigationContainer theme={navigationTheme}>
+            <RootStack.Navigator screenOptions={{ headerShown: false }}>
+              {session && session.user ? (
+                <RootStack.Screen
+                  name="MainAppStack"
+                  component={MainAppStackNavigator}
+                />
+              ) : (
+                <RootStack.Screen name="Auth" component={AuthNavigator} />
+              )}
+            </RootStack.Navigator>
+          </NavigationContainer>
+        </PaperProvider>
+      </QueryClientProvider>
+    </View>
   );
 }

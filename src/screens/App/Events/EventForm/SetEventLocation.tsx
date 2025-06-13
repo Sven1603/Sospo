@@ -1,14 +1,12 @@
 // src/screens/App/CreateEventForm/SetEventLocation.tsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { View, StyleSheet, Alert, Platform } from "react-native";
+import { View, StyleSheet, Platform } from "react-native";
 import {
   Text,
   TextInput,
   HelperText,
   Title,
-  useTheme,
   Caption,
-  Button,
   ActivityIndicator,
 } from "react-native-paper";
 import type { MD3Theme } from "react-native-paper";

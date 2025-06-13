@@ -16,15 +16,8 @@ import {
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MainAppStackParamList } from "../../../navigation/types";
 import { supabase } from "../../../lib/supabase";
-import {
-  ProfileStub,
-  ClubMember as ClubMemberDetail,
-} from "./ClubDetailScreen"; // Reuse types
-
-// Define specific type for this screen's member list item
-type ManagedMember = ClubMemberDetail & {
-  member_profile: ProfileStub | null; // Ensure this aligns with your actual fetched data structure
-};
+import { ClubMember } from "../../../types/clubTypes";
+import { ProfileStub } from "../../../types/commonTypes";
 
 type Props = NativeStackScreenProps<MainAppStackParamList, "ManageClubMembers">;
 
@@ -32,7 +25,7 @@ const ManageClubMembersScreen = ({ route, navigation }: Props) => {
   const { clubId, clubName } = route.params;
   const theme = useTheme();
 
-  const [members, setMembers] = useState<ManagedMember[]>([]);
+  const [members, setMembers] = useState<ClubMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<{
@@ -88,7 +81,7 @@ const ManageClubMembersScreen = ({ route, navigation }: Props) => {
           }
           return { ...member, member_profile: profile };
         });
-        setMembers(processedData as ManagedMember[]);
+        setMembers(processedData as ClubMember[]);
       }
     } catch (e: any) {
       console.error("Error fetching club members:", e);
@@ -159,7 +152,7 @@ const ManageClubMembersScreen = ({ route, navigation }: Props) => {
     Alert.alert(
       "Confirm Removal",
       `Are you sure you want to remove ${
-        targetMember?.member_profile?.username || "this member"
+        targetMember?.profiles?.username || "this member"
       } from the club?`,
       [
         { text: "Cancel", style: "cancel" },
@@ -209,7 +202,7 @@ const ManageClubMembersScreen = ({ route, navigation }: Props) => {
     );
   }
 
-  const renderMemberItem = ({ item }: { item: ManagedMember }) => {
+  const renderMemberItem = ({ item }: { item: ClubMember }) => {
     const isCurrentUserAdmin =
       members.find((m) => m.user_id === currentUserId)?.role === "admin";
     const isTargetAdmin = item.role === "admin";
@@ -227,14 +220,13 @@ const ManageClubMembersScreen = ({ route, navigation }: Props) => {
             <Avatar.Text
               size={40}
               label={
-                item.member_profile?.username?.substring(0, 2).toUpperCase() ||
-                "??"
+                item.profiles?.username?.substring(0, 2).toUpperCase() || "??"
               }
               style={styles.avatar}
             />
             <View style={styles.memberDetails}>
               <Title style={{ fontSize: 16 }}>
-                {item.member_profile?.username ||
+                {item.profiles?.username ||
                   `User ${item.user_id.substring(0, 6)}`}
               </Title>
               <Text style={{ color: theme.colors.outline }}>

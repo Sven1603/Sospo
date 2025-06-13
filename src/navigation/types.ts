@@ -44,7 +44,12 @@ export type MainAppStackParamList = {
       reviewId: string;
     };
   };
-  CreateEventScreen: { clubId?: string; clubName?: string };
+  EventWizardScreen: {
+    clubId?: string;
+    clubName?: string;
+    eventId?: string;
+    eventName?: string;
+  };
   EventDetailScreen: { eventId: string; eventName?: string };
   EventSettingsScreen: {
     eventId: string;
@@ -52,7 +57,7 @@ export type MainAppStackParamList = {
     clubId?: string | null;
     createdByUserId: string;
   };
-  EditEventScreen: { eventId: string; eventName?: string };
+  ManageEventJoinRequests: { eventId: string; eventName: string };
 };
 
 export type RootStackParamList = {
