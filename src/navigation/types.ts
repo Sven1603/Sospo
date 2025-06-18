@@ -14,6 +14,7 @@ export type AppTabParamList = {
 
 export type MainAppStackParamList = {
   AppTabs: { screen?: keyof AppTabParamList };
+  ManageClubClaims: undefined;
   Profile: undefined;
   CreateClub: undefined;
   ClubDetail: { clubId: string };

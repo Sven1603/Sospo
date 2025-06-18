@@ -1,11 +1,4 @@
-// src/screens/App/ClubDetailScreen.tsx
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useLayoutEffect,
-  useMemo,
-} from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -13,27 +6,25 @@ import {
   Image,
   Alert,
   TouchableOpacity,
+  ImageBackground,
 } from "react-native";
 import {
   Text,
   ActivityIndicator,
   Chip,
   Button,
-  Snackbar,
   IconButton,
 } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MainAppStackParamList } from "../../../navigation/types";
 import { supabase } from "../../../lib/supabase";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-import { useFocusEffect } from "@react-navigation/native";
 import StyledText from "../../../components/ui/StyledText";
 import { AppTheme, useAppTheme } from "../../../theme/theme";
 import IconText from "../../../components/ui/IconText";
 import AvatarList from "../../../components/ui/AvatarList";
 import StyledFAB from "../../../components/ui/StyledFAB";
 import { DetailedClub } from "../../../types/clubTypes";
-import { SportTypeStub } from "../../../types/commonTypes";
 import StyledButton from "../../../components/ui/StyledButton";
 import { SafeAreaView } from "react-native-safe-area-context";
 import StyledIconButton from "../../../components/ui/IconButton";
@@ -54,6 +45,9 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
   const { clubId } = route.params;
   const theme = useAppTheme();
   const styles = getStyles(theme);
+
+  const [claimDetails, setClaimDetails] = useState("");
+  const [errorText, setErrorText] = useState("");
 
   const queryClient = useQueryClient();
 
@@ -79,7 +73,7 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
     refetch: refetchClubDetails,
     isRefetching,
   } = useQuery<DetailedClub | null, Error>({
-    queryKey: ["clubDetails", clubId, currentUserAuthId],
+    queryKey: ["clubDetails", clubId],
     queryFn: () => fetchClubDetails(clubId, currentUserAuthId),
     enabled: !!clubId && currentUserAuthId !== undefined,
   });
@@ -103,28 +97,6 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
       isMember: !!membership,
     };
   }, [club, currentUserAuthId]);
-
-  // Set header options dynamically
-  useLayoutEffect(() => {
-    if (club) {
-      navigation.setOptions({
-        title: club.name || "Club Details",
-        headerRight: () => (
-          <IconButton
-            icon="cog-outline"
-            size={26}
-            onPress={() =>
-              navigation.navigate("ClubSettings", {
-                clubId: club.id,
-                clubName: club.name || "Club",
-              })
-            }
-            iconColor={theme.colors.onSurface}
-          />
-        ),
-      });
-    }
-  }, [navigation, club, theme.colors.onSurface]);
 
   // --- Mutations for Club Actions ---
   const joinClubMutation = useMutation({
@@ -186,58 +158,99 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
     );
   }
 
-  // // --- Primary Action Button for Non-Members ---
-  // let primaryActionContent = null;
-  // if (currentUserAuthId && !userRelationship.isMember) {
-  //   if (club.privacy === 'public') {
-  //     primaryActionContent = <Button mode="contained" icon="plus-circle-outline" onPress={handleJoinClub} loading={joinClubMutation.isPending} disabled={joinClubMutation.isPending} style={styles.primaryActionButton}>Join Club</Button>;
-  //   } else if (club.privacy === 'controlled') {
-  //     if (club.currentUserPendingJoinRequest) {
-  //       primaryActionContent = <Chip icon="clock-outline" style={styles.statusChip}>Request Pending</Chip>;
-  //     } else {
-  //       primaryActionContent = <Button mode="contained-tonal" icon="account-plus-outline" onPress={handleRequestToJoin} loading={requestToJoinMutation.isPending} disabled={requestToJoinMutation.isPending} style={styles.primaryActionButton}>Request to Join</Button>;
-  //     }
-  //   }
-  // }
+  let primaryActionContent = null;
+  if (club.created_by) {
+    if (currentUserAuthId && !userRelationship.isMember) {
+      if (club.privacy === "public") {
+        primaryActionContent = (
+          <StyledButton
+            icon="plus-circle-outline"
+            onPress={handleJoinClub}
+            loading={joinClubMutation.isPending}
+            disabled={joinClubMutation.isPending}
+          >
+            Join Club
+          </StyledButton>
+        );
+      } else if (club.privacy === "controlled") {
+        if (club.currentUserPendingJoinRequest) {
+          primaryActionContent = (
+            <StyledButton icon="clock-outline" variant="secondary" disabled>
+              Request Pending
+            </StyledButton>
+          );
+        } else {
+          primaryActionContent = (
+            <StyledButton
+              icon="account-plus-outline"
+              onPress={handleRequestToJoin}
+              loading={requestToJoinMutation.isPending}
+              disabled={requestToJoinMutation.isPending}
+            >
+              Request to Join
+            </StyledButton>
+          );
+        }
+      }
+    }
+  } else {
+    primaryActionContent = (
+      <StyledButton
+        onPress={() =>
+          navigation.navigate("ClaimClub", {
+            clubId: club.id,
+            clubName: club.name,
+          })
+        }
+      >
+        Claim club
+      </StyledButton>
+    );
+  }
 
   const memberProfiles = club.club_members?.map((member) => member.profiles);
+
+  const userHasEditRights =
+    userRelationship.isAdmin ||
+    userRelationship.isContributor ||
+    userRelationship.isOwner;
 
   return (
     <SafeAreaView style={styles.outerContainerForFab}>
       <ScrollView style={styles.scrollView}>
-        {club.cover_image_url ? (
-          <Image
-            source={{ uri: club.cover_image_url }}
+        <View style={styles.coverContainer}>
+          <ImageBackground
+            source={{
+              uri:
+                club.cover_image_url ??
+                "https://cdn.pixabay.com/photo/2021/12/12/20/00/play-6865967_640.jpg",
+            }}
             style={styles.coverContainer}
-          />
-        ) : (
-          <View
-            style={[
-              styles.coverContainer,
-              { backgroundColor: theme.colors.surface },
-            ]}
           >
+            <View style={styles.coverOverlay}></View>
+            <StyledText variant="titleLarge">{club.name}</StyledText>
+            {club.location_text && (
+              <StyledText variant="bodyMedium">{club.location_text}</StyledText>
+            )}
             <View style={styles.coverNavigation}>
               <StyledIconButton
                 icon="chevron-left"
                 variant="plain"
                 onPress={navigation.goBack}
               />
-              <StyledIconButton // TODO: show only when admin or contributor
-                icon="cog-outline"
-                variant="plain"
-                onPress={() =>
-                  navigation.navigate("ClubSettings", {
-                    clubId: club.id,
-                    clubName: club.name || "Club",
-                  })
-                }
-              />
+              {userHasEditRights && (
+                <StyledIconButton
+                  icon="cog-outline"
+                  variant="plain"
+                  onPress={() =>
+                    navigation.navigate("ClubSettings", {
+                      clubId: club.id,
+                      clubName: club.name || "Club",
+                    })
+                  }
+                />
+              )}
             </View>
-            <StyledText variant="titleLarge">{club.name}</StyledText>
-            {club.location_text && (
-              <StyledText variant="bodyMedium">{club.location_text}</StyledText>
-            )}
             <View style={styles.coverDetails}>
               <AvatarList profiles={memberProfiles} />
               <IconText
@@ -245,10 +258,12 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
                 label={club.privacy}
               />
             </View>
-          </View>
-        )}
+          </ImageBackground>
+        </View>
 
         <View style={styles.contentContainer}>
+          {primaryActionContent}
+
           {club.review_count !== null && club.review_count > 0 ? (
             <TouchableOpacity
               onPress={() =>
@@ -349,6 +364,7 @@ const getStyles = (theme: AppTheme) =>
       alignItems: "center",
       justifyContent: "center",
       gap: theme.spacing.x_small,
+      backgroundColor: theme.colors.surface,
     },
     coverDetails: {
       display: "flex",
@@ -367,6 +383,11 @@ const getStyles = (theme: AppTheme) =>
       position: "absolute",
       top: theme.spacing.medium,
       paddingHorizontal: theme.padding.large,
+    },
+    coverOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: theme.colors.background,
+      opacity: 0.5,
     },
     contentContainer: { padding: 20 },
     actionButton: { marginTop: 16, marginBottom: 16 },

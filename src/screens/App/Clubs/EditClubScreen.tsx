@@ -1,6 +1,6 @@
 // src/screens/App/EditClubScreen.tsx
-import React, { useState, useEffect, useCallback } from "react";
-import { View, StyleSheet, ScrollView, Alert } from "react-native";
+import React, { useState, useEffect, useMemo } from "react";
+import { View, StyleSheet, ScrollView, Alert, Image } from "react-native";
 import {
   Button,
   TextInput,
@@ -11,301 +11,244 @@ import {
   ActivityIndicator,
   Snackbar,
   useTheme,
-  Title,
-  Divider, // Added Title for consistency
 } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainAppStackParamList } from "../../../navigation/types"; // Ensure this path is correct
-import { supabase } from "../../../lib/supabase"; // Ensure this path is correct
-
-// Type for sport types fetched from DB (can be shared or defined here)
-type SportType = {
-  id: string; // UUID
-  name: string;
-};
+import { MainAppStackParamList } from "../../../navigation/types";
+import { supabase } from "../../../lib/supabase";
+import StyledIconButton from "../../../components/ui/IconButton";
+import * as ImagePicker from "expo-image-picker";
+import { AppTheme, useAppTheme } from "../../../theme/theme";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchAllSportTypes } from "../../../services/sportService";
+import {
+  fetchClubDetails,
+  updateClub,
+  uploadClubCoverImage,
+} from "../../../services/clubService";
+import { ClubPrivacy, UpdateClubPayload } from "../../../types/clubTypes";
+import StyledText from "../../../components/ui/StyledText";
+import StyledButton from "../../../components/ui/StyledButton";
+import StyledTextInput from "../../../components/ui/StyledTextInput";
 
 // Privacy options (can be shared or defined here)
 const privacyOptions = [
   { label: "Public", value: "public", icon: "earth" },
-  { label: "Private", value: "private", icon: "lock" },
   { label: "Controlled", value: "controlled", icon: "account-eye" },
+  // { label: "Private", value: "private", icon: "lock" },
 ];
 
 type Props = NativeStackScreenProps<MainAppStackParamList, "EditClub">;
 
 const EditClubScreen = ({ route, navigation }: Props) => {
   const { clubId } = route.params;
-  const theme = useTheme();
+  const theme = useAppTheme();
+  const styles = useMemo(() => getStyles(theme), [theme]);
+  const queryClient = useQueryClient();
 
   // Form state
-  const [clubName, setClubName] = useState("");
+  const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [locationText, setLocationText] = useState("");
-  const [coverImageUrl, setCoverImageUrl] = useState("");
-  const [privacy, setPrivacy] = useState<"public" | "private" | "controlled">(
-    "public"
-  );
-  const [selectedSportTypeIds, setSelectedSportTypeIds] = useState<string[]>(
-    []
-  );
+  const [location, setLocation] = useState("");
+  const [privacy, setPrivacy] = useState<ClubPrivacy>("public");
+  const [selectedSportIds, setSelectedSportIds] = useState<string[]>([]);
+  const [newCoverImage, setNewCoverImage] =
+    useState<ImagePicker.ImagePickerAsset | null>(null);
 
-  // Data fetching and loading states
-  const [availableSportTypes, setAvailableSportTypes] = useState<SportType[]>(
-    []
-  );
-  const [loadingInitialData, setLoadingInitialData] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [snackbarVisible, setSnackbarVisible] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState("");
+  // Fetch initial club data
+  const {
+    data: club,
+    isLoading: isLoadingClub,
+    isError,
+    error: fetchError,
+  } = useQuery({
+    queryKey: ["clubDetails", clubId],
+    queryFn: () => fetchClubDetails(clubId),
+    enabled: !!clubId,
+  });
 
-  // Fetch all available sport types (for the selector)
+  const { data: sportTypes = [], isLoading: isLoadingSports } = useQuery({
+    queryKey: ["sportTypes"],
+    queryFn: fetchAllSportTypes,
+  });
+
   useEffect(() => {
-    const fetchAllSportTypes = async () => {
-      const { data, error: fetchError } = await supabase
-        .from("sport_types")
-        .select("id, name")
-        .order("name", { ascending: true });
-
-      if (fetchError) {
-        console.error("Error fetching all sport types:", fetchError);
-        setError("Could not load sport type options."); // Show error related to sport types loading
-      } else if (data) {
-        setAvailableSportTypes(data as SportType[]);
-      }
-    };
-    fetchAllSportTypes();
-  }, []);
-
-  // Fetch existing club data to pre-fill the form
-  useEffect(() => {
-    if (!clubId) {
-      setError("No Club ID provided for editing.");
-      setLoadingInitialData(false);
-      navigation.setOptions({ title: "Error - No Club ID" });
-      return;
-    }
-
-    const fetchClubToEdit = async () => {
-      setLoadingInitialData(true);
-      setError(null); // Clear previous errors
-      try {
-        const { data, error: clubError } = await supabase
-          .from("clubs")
-          .select(
-            `
-            name,
-            description,
-            privacy,
-            location_text,
-            cover_image_url,
-            club_sport_types ( sport_types ( id ) )
-          `
-          )
-          .eq("id", clubId)
-          .single();
-
-        if (clubError) throw clubError;
-
-        if (data) {
-          navigation.setOptions({ title: `Edit "${data.name}"` }); // Set screen title
-          setClubName(data.name || "");
-          setDescription(data.description || "");
-          setPrivacy(data.privacy as "public" | "private" | "controlled");
-          setLocationText(data.location_text || "");
-          setCoverImageUrl(data.cover_image_url || "");
-
-          const currentSportTypeIds = (data.club_sport_types || [])
-            .map((cst: any) => {
-              // Handle if cst.sport_types is an object or array (based on previous TS fixes)
-              const sportTypeData = cst.sport_types;
-              if (Array.isArray(sportTypeData) && sportTypeData.length > 0) {
-                return sportTypeData[0]?.id;
-              } else if (sportTypeData && !Array.isArray(sportTypeData)) {
-                return (sportTypeData as SportType)?.id;
-              }
-              return null;
-            })
-            .filter(Boolean) as string[];
-          setSelectedSportTypeIds(currentSportTypeIds);
-        } else {
-          setError("Club not found or you do not have permission to edit it.");
-          Alert.alert("Error", "Club not found or access denied.");
-          navigation.goBack();
-        }
-      } catch (e: any) {
-        console.error("Error fetching club to edit:", e);
-        setError(e.message || "Failed to load club data for editing.");
-        Alert.alert("Error", "Failed to load club data.");
-      } finally {
-        setLoadingInitialData(false);
-      }
-    };
-    fetchClubToEdit();
-  }, [clubId, navigation]);
-
-  const handleToggleSportType = (sportTypeId: string) => {
-    setSelectedSportTypeIds((prevSelected) =>
-      prevSelected.includes(sportTypeId)
-        ? prevSelected.filter((id) => id !== sportTypeId)
-        : [...prevSelected, sportTypeId]
-    );
-  };
-
-  const handleUpdateClub = async () => {
-    if (!clubName.trim()) {
-      setError("Club name is required.");
-      return;
-    }
-    if (selectedSportTypeIds.length === 0) {
-      setError("At least one sport type must be selected.");
-      return;
-    }
-    // Add other client-side validation as needed
-
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      const { error: rpcError } = await supabase.rpc(
-        "update_club_details_and_sports",
-        {
-          p_club_id: clubId,
-          p_club_name: clubName.trim(),
-          p_club_description: description.trim(),
-          p_new_selected_sport_type_ids: selectedSportTypeIds,
-          p_club_privacy: privacy,
-          p_club_location_text: locationText.trim(),
-          p_club_cover_image_url: coverImageUrl.trim() || null,
-        }
+    if (club) {
+      navigation.setOptions({ title: `Edit: ${club.name}` });
+      setName(club.name ?? "");
+      setDescription(club.description ?? "");
+      setLocation(club.location_text ?? "");
+      setPrivacy(club.privacy ?? "public");
+      setSelectedSportIds(
+        club.club_sport_types?.map((cst) => cst.sport_types!.id) || []
       );
+      setNewCoverImage(null);
+    }
+  }, [club, navigation]);
 
-      if (rpcError) {
-        console.error("RPC Error updating club:", rpcError);
-        // Check for specific RLS violation messages (PostgreSQL raises specific error codes/messages)
-        if (
-          rpcError.message.includes(
-            "Only the club owner or an admin can change the privacy setting"
-          )
-        ) {
-          setError(
-            "Failed to update: Only the club owner or an admin can change the privacy setting."
-          );
-        } else if (
-          rpcError.message.includes("Club owner (created_by) cannot be changed")
-        ) {
-          setError(
-            "Failed to update: Club owner field cannot be changed here."
-          );
-        } else if (
-          rpcError.message.includes("violates row-level security policy") ||
-          rpcError.message.includes("permission denied")
-        ) {
-          setError(
-            "Update failed: You may not have permission to perform this update or change certain fields."
-          );
-        } else {
-          throw rpcError; // Re-throw other RPC errors
-        }
+  // Mutation for saving changes
+  const updateClubMutation = useMutation({
+    mutationFn: updateClub,
+    onSuccess: async () => {
+      // If a new image was selected, trigger its upload now
+      if (newCoverImage) {
+        console.log("New cover image:", newCoverImage);
+        await coverImageUploadMutation.mutateAsync({
+          clubId,
+          file: newCoverImage,
+        });
       } else {
-        setSnackbarMessage("Club updated successfully!");
-        setSnackbarVisible(true);
-        // Navigate back to club details, which should re-fetch.
-        // Or, if ClubDetailScreen subscribes to changes, it might update automatically.
-        // For now, navigating back is simplest.
-        setTimeout(() => {
-          if (navigation.canGoBack()) navigation.goBack();
-        }, 1500);
+        // If no new image, we're done
+        // Alert.alert("Success", "Club details have been updated.");
+        queryClient.invalidateQueries({ queryKey: ["clubDetails", clubId] });
+        queryClient.invalidateQueries({ queryKey: ["visibleClubs"] });
+        navigation.goBack();
       }
-    } catch (e: any) {
-      console.error("General error updating club:", e);
-      setError(
-        e.message || "An unexpected error occurred while updating the club."
+    },
+    onError: (error: Error) =>
+      Alert.alert("Error Updating Club", error.message),
+  });
+
+  // Mutation for uploading the cover image specifically
+  const coverImageUploadMutation = useMutation({
+    mutationFn: uploadClubCoverImage,
+    onSuccess: () => {
+      setNewCoverImage(null);
+      // Alert.alert("Success", "Club details and cover image have been updated.");
+      queryClient.invalidateQueries({ queryKey: ["clubDetails", clubId] });
+      queryClient.invalidateQueries({ queryKey: ["visibleClubs"] });
+      navigation.goBack();
+    },
+    onError: (error: Error) => {
+      Alert.alert(
+        "Image Upload Failed",
+        `Club details were saved, but the cover image failed to upload: ${error.message}`
       );
-    } finally {
-      setIsSubmitting(false);
+      queryClient.invalidateQueries({ queryKey: ["clubDetails", clubId] });
+      queryClient.invalidateQueries({ queryKey: ["visibleClubs"] });
+      navigation.goBack();
+    },
+  });
+
+  const handleSelectImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission Denied",
+        "Sorry, we need camera roll permissions."
+      );
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setNewCoverImage(result.assets[0]);
     }
   };
 
-  if (loadingInitialData) {
+  const handleSaveChanges = () => {
+    if (!name.trim() || selectedSportIds.length === 0) {
+      Alert.alert(
+        "Validation Error",
+        "Please provide a club name and select at least one sport."
+      );
+      return;
+    }
+
+    const payload: UpdateClubPayload = {
+      clubId,
+      name: name.trim(),
+      description: description.trim() || null,
+      location_text: location.trim() || null,
+      privacy,
+      selected_sport_type_ids: selectedSportIds,
+      cover_image_url: club?.cover_image_url || null,
+    };
+
+    updateClubMutation.mutate(payload);
+  };
+
+  if (isLoadingClub) {
     return (
-      <View style={styles.centeredLoader}>
-        <ActivityIndicator animating={true} size="large" />
-        <Text style={{ marginTop: 10 }}>Loading club data for editing...</Text>
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" />
       </View>
     );
   }
 
-  // If initial load failed badly (e.g., club not found) and error is set
-  if (error && !clubName && !description) {
-    // Heuristic: if form fields are still empty and error exists
+  if (isError) {
     return (
-      <View style={styles.centeredLoader}>
-        <Text
-          style={{
-            color: theme.colors.error,
-            textAlign: "center",
-            marginBottom: 10,
-          }}
-        >
-          {error}
-        </Text>
-        <Button onPress={() => navigation.goBack()}>Go Back</Button>
+      <View style={styles.centered}>
+        <Text>Error loading club data: {fetchError?.message}</Text>
       </View>
     );
   }
+
+  const isSaving =
+    updateClubMutation.isPending || coverImageUploadMutation.isPending;
+  const currentCoverImageUri =
+    newCoverImage?.uri ||
+    club?.cover_image_url ||
+    "https://news.sanfordhealth.org/wp-content/uploads/2022/04/Running-Outdoors_SHN-800x600-1.jpg"; // TODO: update with AI image
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Title style={styles.title}>Edit "{clubName || "Club"}"</Title>
+      <View style={styles.imagePreviewContainer}>
+        <Image
+          source={{ uri: currentCoverImageUri }}
+          style={styles.imagePreview}
+        />
+        <View style={styles.imageEditIconContainer}>
+          <StyledIconButton icon="camera" onPress={handleSelectImage} />
+        </View>
+      </View>
 
-      <TextInput
-        label="Club Name*"
-        value={clubName}
-        onChangeText={setClubName}
-        mode="outlined"
-        style={styles.input}
+      <StyledTextInput
+        label="Club Name"
+        value={name}
+        onChangeText={setName}
         maxLength={100}
       />
 
-      <TextInput
+      <StyledTextInput
         label="Description (optional)"
         value={description}
         onChangeText={setDescription}
-        mode="outlined"
-        style={styles.input}
         multiline
         numberOfLines={3}
       />
 
-      <TextInput
+      <StyledTextInput
         label="Location (e.g., City, Park)"
-        value={locationText}
-        onChangeText={setLocationText}
-        mode="outlined"
-        style={styles.input}
+        value={location}
+        onChangeText={setLocation}
       />
 
-      <Text style={styles.label}>Sport Type(s)*</Text>
-      {availableSportTypes.length > 0 ? (
-        availableSportTypes.map((sport) => (
+      <StyledText variant="titleSmall">Sport Type(s)*</StyledText>
+      {isLoadingSports ? (
+        <ActivityIndicator />
+      ) : (
+        sportTypes.map((sport) => (
           <Checkbox.Item
             key={sport.id}
             label={sport.name}
             status={
-              selectedSportTypeIds.includes(sport.id) ? "checked" : "unchecked"
+              selectedSportIds.includes(sport.id) ? "checked" : "unchecked"
             }
-            onPress={() => handleToggleSportType(sport.id)}
+            onPress={() => {
+              const newSelection = selectedSportIds.includes(sport.id)
+                ? selectedSportIds.filter((id) => id !== sport.id)
+                : [...selectedSportIds, sport.id];
+              setSelectedSportIds(newSelection);
+            }}
             position="leading"
-            style={styles.checkboxItem}
           />
         ))
-      ) : (
-        <Text style={styles.input}>Loading sport types...</Text>
       )}
-      <HelperText type="info" visible={true} style={styles.infoText}>
-        Select at least one sport.
-      </HelperText>
 
       <Text style={styles.label}>Privacy Setting*</Text>
       <SegmentedButtons
@@ -318,61 +261,70 @@ const EditClubScreen = ({ route, navigation }: Props) => {
         // Note: UI doesn't yet disable this for contributors. RLS/trigger handles backend enforcement.
       />
 
-      <TextInput
-        label="Cover Image URL (optional)"
-        value={coverImageUrl}
-        onChangeText={setCoverImageUrl}
-        mode="outlined"
-        style={styles.input}
-        keyboardType="url"
-      />
-
-      {error && (
-        <HelperText type="error" visible={!!error} style={styles.errorText}>
-          {error}
-        </HelperText>
+      {updateClubMutation.isError && (
+        <StyledText color={theme.colors.error}>
+          Something went wrong when saving your changes
+        </StyledText>
       )}
 
-      <Button
-        mode="contained"
-        onPress={handleUpdateClub}
-        loading={isSubmitting}
-        disabled={isSubmitting || loadingInitialData}
-        style={styles.button}
+      <StyledButton
+        onPress={handleSaveChanges}
+        loading={isSaving}
+        disabled={isSaving}
         icon="content-save-edit-outline"
       >
-        {isSubmitting ? "Saving Changes..." : "Save Changes"}
-      </Button>
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={3000}
-        action={{ label: "OK", onPress: () => setSnackbarVisible(false) }}
-      >
-        {snackbarMessage}
-      </Snackbar>
+        {updateClubMutation.isPending ? "Saving Changes..." : "Save Changes"}
+      </StyledButton>
     </ScrollView>
   );
 };
 
 // Styles can be similar to CreateClubScreen, ensure 'centeredLoader' is defined
-const styles = StyleSheet.create({
-  container: { paddingHorizontal: 20, paddingVertical: 10, paddingBottom: 40 },
-  centeredLoader: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  title: { textAlign: "center", marginBottom: 20, marginTop: 10, fontSize: 20 },
-  input: { marginBottom: 10 },
-  label: { fontSize: 16, marginBottom: 8, marginTop: 12, fontWeight: "600" },
-  checkboxItem: { paddingVertical: 0 },
-  infoText: { marginBottom: 10 },
-  button: { marginTop: 20, paddingVertical: 8 },
-  errorText: {
-    /* color: theme.colors.error - ensure theme is accessible or use direct color */
-  },
-});
+const getStyles = (theme: AppTheme) =>
+  StyleSheet.create({
+    container: {
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+      paddingBottom: 40,
+    },
+    centered: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      padding: 20,
+    },
+    title: {
+      textAlign: "center",
+      marginBottom: 20,
+      marginTop: 10,
+      fontSize: 20,
+    },
+    input: { marginBottom: 10 },
+    label: { fontSize: 16, marginBottom: 8, marginTop: 12, fontWeight: "600" },
+    checkboxItem: { paddingVertical: 0 },
+    infoText: { marginBottom: 10 },
+    button: { marginTop: 20, paddingVertical: 8 },
+    errorText: {
+      /* color: theme.colors.error - ensure theme is accessible or use direct color */
+    },
+
+    imagePreviewContainer: {
+      alignItems: "center",
+      marginBottom: 16,
+    },
+    imagePreview: {
+      width: "100%",
+      height: 200,
+      borderRadius: theme.roundness,
+      backgroundColor: theme.colors.surface,
+    },
+    imageEditIconContainer: {
+      position: "absolute",
+      bottom: theme.spacing.x_small,
+      right: theme.spacing.x_small,
+      borderRadius: 20,
+      padding: 4,
+    },
+  });
 
 export default EditClubScreen;

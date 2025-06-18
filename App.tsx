@@ -6,7 +6,7 @@ import {
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Provider as PaperProvider } from "react-native-paper";
-import { View } from "react-native";
+import { SafeAreaView, View } from "react-native";
 import { Text } from "react-native-paper";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as SplashScreen from "expo-splash-screen";
@@ -19,6 +19,8 @@ import type { Session } from "@supabase/supabase-js";
 import { enGB, registerTranslation } from "react-native-paper-dates";
 import { theme, useAppTheme } from "./src/theme/theme";
 import { useFonts } from "expo-font";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
 
 registerTranslation("en-GB", enGB);
 
@@ -93,7 +95,14 @@ export default function App() {
   }
 
   return (
-    <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+    <View
+      style={{ flex: 1, backgroundColor: customTheme.colors.background }}
+      onLayout={onLayoutRootView}
+    >
+      <StatusBar
+        style="light"
+        backgroundColor={customTheme.colors.background}
+      />
       <QueryClientProvider client={queryClient}>
         <PaperProvider theme={theme}>
           <NavigationContainer theme={navigationTheme}>

@@ -1,182 +1,122 @@
-// src/screens/App/ClaimClubScreen.tsx
-import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, Alert } from "react-native";
+// src/screens/App/Clubs/ClaimClubScreen.tsx
+import React, { useState, useMemo } from "react";
+import { View, StyleSheet, Alert, ScrollView } from "react-native";
 import {
-  Button,
   TextInput,
-  Text,
   HelperText,
-  ActivityIndicator,
   Snackbar,
   useTheme,
+  MD3Theme,
 } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainAppStackParamList } from "../../../navigation/types";
+import { useMutation } from "@tanstack/react-query";
 import { supabase } from "../../../lib/supabase";
+import { MainAppStackParamList } from "../../../navigation/types";
+import { AppTheme, useAppTheme } from "../../../theme/theme";
+import StyledText from "../../../components/ui/StyledText";
+import StyledButton from "../../../components/ui/StyledButton";
+import { submitClubClaim } from "../../../services/clubService";
+import StyledTextInput from "../../../components/ui/StyledTextInput";
 
 type Props = NativeStackScreenProps<MainAppStackParamList, "ClaimClub">;
 
 const ClaimClubScreen = ({ route, navigation }: Props) => {
   const { clubId, clubName } = route.params;
-  const theme = useTheme();
+  const theme = useAppTheme();
+  const styles = useMemo(() => getStyles(theme), [theme]);
 
   const [claimDetails, setClaimDetails] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [snackbarVisible, setSnackbarVisible] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [errorText, setErrorText] = useState("");
 
-  const handleSubmitClaim = async () => {
+  const submitClaimMutation = useMutation({
+    mutationFn: submitClubClaim,
+    onSuccess: () => {
+      Alert.alert(
+        "Request Submitted",
+        "Your request to claim this club has been submitted for review. We will get back to you shortly.",
+        [{ text: "OK", onPress: () => navigation.goBack() }]
+      );
+    },
+    onError: (error: Error) => {
+      // RLS policies will throw an error if the user is not allowed to claim.
+      if (error.message.includes("violates row-level security policy")) {
+        setErrorText(
+          "Could not submit claim. The club may already be owned or you have a pending request."
+        );
+      } else {
+        setErrorText(error.message);
+      }
+    },
+  });
+
+  const handleSubmit = () => {
+    const user = supabase.auth.getUser();
+
     if (!claimDetails.trim()) {
-      setError("Please provide some details for your claim.");
+      setErrorText("Please provide details for your claim.");
       return;
     }
+    setErrorText("");
 
-    setLoading(true);
-    setError(null);
-
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error("User not authenticated.");
-      }
-
-      const { error: insertError } = await supabase
-        .from("club_claim_requests")
-        .insert({
-          club_id: clubId,
-          user_id: user.id,
-          claim_details: claimDetails.trim(),
-          status: "pending", // Default status
+    user.then(({ data: { user } }) => {
+      if (user) {
+        submitClaimMutation.mutate({
+          userId: user.id,
+          clubId: clubId,
+          claimDetails: claimDetails.trim(),
         });
-
-      if (insertError) {
-        // Check for unique constraint violation (user already claimed this club and it's pending/approved)
-        if (
-          insertError.message.includes(
-            "duplicate key value violates unique constraint"
-          )
-        ) {
-          // This specific unique constraint name might vary or not be present if you didn't add one on (club_id, user_id, status)
-          // The RLS policy also prevents duplicate active claims.
-          setError(
-            "You already have an active claim for this club or your previous claim is still being processed."
-          );
-          Alert.alert(
-            "Claim Submitted Already",
-            "You already have an active claim for this club."
-          );
-        } else {
-          throw insertError;
-        }
       } else {
-        setSnackbarMessage(
-          `Claim for "${clubName}" submitted successfully! You will be notified once it's reviewed.`
-        );
-        setSnackbarVisible(true);
-        // Navigate back to club details or club list after a delay
-        setTimeout(() => {
-          if (navigation.canGoBack()) navigation.goBack();
-        }, 3000); // Delay to allow snackbar to be seen
+        Alert.alert("Error", "You must be logged in to claim a club.");
       }
-    } catch (e: any) {
-      console.error("Error submitting claim:", e);
-      setError(
-        e.message || "An unexpected error occurred while submitting your claim."
-      );
-      // Alert.alert('Error', e.message || 'Failed to submit claim.');
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text variant="headlineSmall" style={styles.title}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ rowGap: theme.spacing.medium }}
+      keyboardShouldPersistTaps="handled"
+    >
+      <StyledText variant="titleLarge" alignCenter>
         Claim "{clubName}"
-      </Text>
-      <Text variant="bodyMedium" style={styles.subtitle}>
-        Please provide details to support your claim for managing this club
-        (e.g., your role in the real-world club, contact information, website).
-      </Text>
+      </StyledText>
 
-      <TextInput
-        label="Claim Details / Justification*"
-        value={claimDetails}
-        onChangeText={setClaimDetails}
-        mode="outlined"
-        style={styles.input}
-        multiline
-        numberOfLines={5}
-        maxLength={1000}
-      />
+      <View>
+        <StyledText>
+          Please explain your connection to this club and why you should be the
+          administrator.
+        </StyledText>
 
-      {error && (
-        <HelperText type="error" visible={!!error} style={styles.errorText}>
-          {error}
-        </HelperText>
-      )}
+        <StyledTextInput
+          label="Claim Details"
+          value={claimDetails}
+          onChangeText={setClaimDetails}
+          multiline
+          numberOfLines={6}
+          errorText={errorText}
+        />
+      </View>
 
-      <Button
-        mode="contained"
-        onPress={handleSubmitClaim}
-        loading={loading}
-        disabled={loading || !claimDetails.trim()}
-        style={styles.button}
-        icon="check-decagram-outline"
+      <StyledButton
+        onPress={handleSubmit}
+        loading={submitClaimMutation.isPending}
+        disabled={submitClaimMutation.isPending}
+        icon="check-circle-outline"
       >
-        {loading ? "Submitting Claim..." : "Submit Claim"}
-      </Button>
-      <Button
-        mode="text"
-        onPress={() => navigation.goBack()}
-        disabled={loading}
-        style={styles.cancelButton}
-      >
-        Cancel
-      </Button>
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={3000} // Longer for important messages
-        action={{ label: "OK", onPress: () => setSnackbarVisible(false) }}
-      >
-        {snackbarMessage}
-      </Snackbar>
+        {submitClaimMutation.isPending
+          ? "Submitting..."
+          : "Submit Claim Request"}
+      </StyledButton>
     </ScrollView>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  title: {
-    textAlign: "center",
-    marginBottom: 10,
-  },
-  subtitle: {
-    textAlign: "center",
-    marginBottom: 20,
-    fontSize: 14,
-    // color: theme.colors.onSurfaceVariant, // Use theme
-  },
-  input: {
-    marginBottom: 15,
-  },
-  button: {
-    marginTop: 20,
-    paddingVertical: 8,
-  },
-  cancelButton: {
-    marginTop: 10,
-  },
-  errorText: {
-    // textAlign: 'center',
-  },
-});
+const getStyles = (theme: AppTheme) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 20,
+    },
+  });
 
 export default ClaimClubScreen;

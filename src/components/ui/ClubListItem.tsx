@@ -19,7 +19,12 @@ const ClubListItem: React.FC<ClubListItemProps> = ({ club, onPress }) => {
       <View style={styles.container}>
         <View style={styles.content}>
           <View style={styles.avatar}>
-            {club.cover_image_url && <Image src={club.cover_image_url}></Image>}
+            {club.cover_image_url && (
+              <Image
+                src={club.cover_image_url}
+                style={styles.avatarImage}
+              ></Image>
+            )}
           </View>
           <View style={styles.clubDetails}>
             <StyledText variant="titleSmall">{club.name}</StyledText>
@@ -27,6 +32,12 @@ const ClubListItem: React.FC<ClubListItemProps> = ({ club, onPress }) => {
               <IconText
                 icon="account-group-outline"
                 label={club.member_count.toString()}
+              />
+            )}
+            {club.location_text && (
+              <IconText
+                icon={"map-marker-outline"}
+                label={club.location_text}
               />
             )}
             <IconText
@@ -65,6 +76,11 @@ const getStyles = (theme: AppTheme) =>
       width: 60,
       height: 60,
       backgroundColor: theme.colors.surface,
+      borderRadius: 8,
+    },
+    avatarImage: {
+      width: "100%",
+      height: "100%",
       borderRadius: 8,
     },
     clubDetails: {

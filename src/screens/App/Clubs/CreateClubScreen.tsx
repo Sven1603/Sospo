@@ -1,22 +1,27 @@
-// src/screens/App/CreateClubScreen.tsx
-import React, { useState, useEffect, useCallback } from "react";
-import { View, StyleSheet, ScrollView, Alert } from "react-native";
+import React, { useState, useMemo, useRef } from "react";
+import { StyleSheet, ScrollView, Alert, View, Image } from "react-native";
 import {
-  Button,
-  TextInput,
-  Text,
-  HelperText,
-  // RadioButton, // No longer using RadioButton for sport type
-  Checkbox, // Using Checkbox for multi-select sport types
+  Checkbox,
   SegmentedButtons,
   ActivityIndicator,
   Snackbar,
-  List, // For displaying sport type options
-  Divider,
 } from "react-native-paper";
 import { supabase } from "../../../lib/supabase";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { MainAppStackParamList } from "../../../navigation/types";
+
+import { fetchAllSportTypes } from "../../../services/sportService";
+import { uploadClubCoverImage } from "../../../services/clubService";
+import { AppTheme, useAppTheme } from "../../../theme/theme";
+import StyledTextInput from "../../../components/ui/StyledTextInput";
+import StyledText from "../../../components/ui/StyledText";
+import StyledButton from "../../../components/ui/StyledButton";
+import StyledIconButton from "../../../components/ui/IconButton";
+import MapView, { MapPressEvent, Marker } from "react-native-maps";
+import * as Location from "expo-location";
+import { SUPPORTED_SPORTS } from "../../../utils/constants";
 
 type CreateClubScreenNavigationProp = NativeStackNavigationProp<
   MainAppStackParamList,
@@ -27,226 +32,276 @@ type Props = {
   navigation: CreateClubScreenNavigationProp;
 };
 
-// Type for sport types fetched from DB
-type SportType = {
-  id: string; // UUID
-  name: string;
-};
-
-// Privacy options remain the same
 const privacyOptions = [
   { label: "Public", value: "public", icon: "earth" },
-  { label: "Private", value: "private", icon: "lock" },
   { label: "Controlled", value: "controlled", icon: "account-eye" },
+  // { label: "Private", value: "private", icon: "lock" },
 ];
 
+const AMSTERDAM_COORDS = {
+  latitude: 52.3676,
+  longitude: 4.9041,
+  latitudeDelta: 0.0922,
+  longitudeDelta: 0.0421,
+};
+
 const CreateClubScreen = ({ navigation }: Props) => {
-  const [clubName, setClubName] = useState("");
+  const theme = useAppTheme();
+  const styles = useMemo(() => getStyles(theme), [theme]);
+  const queryClient = useQueryClient();
+  const mapRef = useRef<MapView>(null);
+
+  const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [privacy, setPrivacy] = useState<"public" | "controlled">("public");
+  const [selectedSportIds, setSelectedSportIds] = useState<string[]>([]);
+  const [coverImage, setCoverImage] =
+    useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [mapDerivedAddress, setMapDerivedAddress] = useState<string | null>(
+    null
+  );
   const [locationText, setLocationText] = useState("");
-  const [coverImageUrl, setCoverImageUrl] = useState("");
-  const [privacy, setPrivacy] = useState<"public" | "private" | "controlled">(
-    "public"
-  );
+  const [isGeocoding, setIsGeocoding] = useState(false);
 
-  // State for sport types
-  const [availableSportTypes, setAvailableSportTypes] = useState<SportType[]>(
-    []
-  );
-  const [selectedSportTypeIds, setSelectedSportTypeIds] = useState<string[]>(
-    []
-  );
-  const [loadingSportTypes, setLoadingSportTypes] = useState(true);
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
 
-  // Fetch available sport types on mount
-  useEffect(() => {
-    const fetchSports = async () => {
-      setLoadingSportTypes(true);
-      const { data, error: fetchError } = await supabase
-        .from("sport_types")
-        .select("id, name")
-        .order("name", { ascending: true });
+  const { data: allSportTypes = [], isLoading: isLoadingSports } = useQuery({
+    queryKey: ["sportTypes"],
+    queryFn: fetchAllSportTypes,
+  });
 
-      if (fetchError) {
-        console.error("Error fetching sport types:", fetchError);
-        setError("Could not load sport types. Please try again.");
-      } else if (data) {
-        setAvailableSportTypes(data as SportType[]);
-      }
-      setLoadingSportTypes(false);
-    };
-    fetchSports();
-  }, []);
+  const markerCoordinates = useMemo(
+    () =>
+      latitude && longitude
+        ? { latitude: latitude, longitude: longitude }
+        : null,
+    [latitude, longitude]
+  );
 
-  const handleToggleSportType = (sportTypeId: string) => {
-    setSelectedSportTypeIds(
-      (prevSelected) =>
-        prevSelected.includes(sportTypeId)
-          ? prevSelected.filter((id) => id !== sportTypeId) // Remove if already selected
-          : [...prevSelected, sportTypeId] // Add if not selected
-    );
-  };
+  const sportTypes = allSportTypes.filter((sport) =>
+    SUPPORTED_SPORTS.includes(sport.name.toLowerCase())
+  );
 
-  const handleCreateClub = async () => {
-    if (!clubName.trim()) {
-      setError("Club name is required.");
-      return;
-    }
-    if (selectedSportTypeIds.length === 0) {
-      setError("At least one sport type must be selected.");
-      return;
-    }
-    // Add other client-side validation as needed
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const { data: newClubId, error: rpcError } = await supabase.rpc(
+  const createClubMutation = useMutation({
+    mutationFn: async () => {
+      // 1. Call RPC to create the club record and get the new club ID
+      const { data: newClubId, error: createError } = await supabase.rpc(
         "create_club_and_assign_admin",
         {
-          p_club_name: clubName.trim(),
-          p_club_description: description.trim(),
-          p_selected_sport_type_ids: selectedSportTypeIds, // Pass array of selected IDs
-          p_club_privacy: privacy,
-          p_club_location_text: locationText.trim(),
-          p_club_cover_image_url: coverImageUrl.trim() || null,
+          p_name: name,
+          p_description: description,
+          p_selected_sport_type_ids: selectedSportIds,
+          p_privacy: privacy,
+          p_latitude: latitude,
+          p_longitude: longitude,
+          p_map_derived_address: mapDerivedAddress,
+          p_location_text: locationText,
+          // cover image URL is set in a separate step after we get the clubId
+          p_cover_image_url: coverImage
+            ? null
+            : "https://wjnsiwaxvnavqmzprtzi.supabase.co/storage/v1/object/public/club-images//default-cover.jpg",
         }
       );
 
-      if (rpcError) {
-        throw rpcError;
+      if (createError) throw createError;
+      if (!newClubId) throw new Error("Failed to create club: No ID returned.");
+
+      // 2. If an image was selected, upload it now that we have the club ID
+      if (coverImage) {
+        await uploadClubCoverImage({
+          clubId: newClubId,
+          file: coverImage,
+        });
       }
 
-      if (newClubId) {
-        setSnackbarMessage("Club created successfully!");
-        setSnackbarVisible(true);
-        // Optionally reset form fields
-        setClubName("");
-        setDescription("");
-        setSelectedSportTypeIds([]);
-        // ... reset other fields
-        setTimeout(() => navigation.goBack(), 1500); // Go back after showing snackbar
+      return newClubId; // Return the new ID on success
+    },
+    onSuccess: (newClubId) => {
+      // Invalidate queries to refresh club lists
+      queryClient.invalidateQueries({ queryKey: ["visibleClubs"] });
+      queryClient.invalidateQueries({ queryKey: ["myClubs"] });
+      Alert.alert("Success", "Your club has been created!", [
+        {
+          text: "OK",
+          onPress: () =>
+            navigation.replace("ClubDetail", { clubId: newClubId }),
+        },
+      ]);
+    },
+    onError: (error: Error) => {
+      Alert.alert("Error Creating Club", error.message);
+      console.error("Error Creating Club", error);
+    },
+  });
+
+  const handleMapPress = async (e: MapPressEvent) => {
+    const coords = e.nativeEvent.coordinate;
+    setLatitude(coords.latitude);
+    setLongitude(coords.longitude);
+
+    setIsGeocoding(true);
+    setMapDerivedAddress("Fetching address...");
+    try {
+      const addressResult = await Location.reverseGeocodeAsync(coords);
+      if (addressResult && addressResult.length > 0) {
+        const { street, streetNumber, city, postalCode } = addressResult[0];
+        const formattedAddress = [streetNumber, street, city, postalCode]
+          .filter(Boolean)
+          .join(", ");
+        setMapDerivedAddress(formattedAddress);
       } else {
-        throw new Error("Failed to create club: No ID returned from function.");
+        setMapDerivedAddress("Address not found.");
       }
-    } catch (e: any) {
-      console.error("Error creating club:", e);
-      setError(
-        e.message || "An unexpected error occurred while creating the club."
-      );
-      // Alert.alert('Error', e.message || 'Failed to create club.'); // Alert can be annoying
+    } catch (error) {
+      setMapDerivedAddress("Could not fetch address.");
     } finally {
-      setLoading(false);
+      setIsGeocoding(false);
     }
   };
 
-  return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <TextInput
-        label="Club Name*"
-        value={clubName}
-        onChangeText={setClubName}
-        mode="outlined"
-        style={styles.input}
-        maxLength={100}
-      />
+  const handleSelectImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission Denied",
+        "Sorry, we need camera roll permissions."
+      );
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.8,
+    });
 
-      <TextInput
-        label="Description (optional)"
+    if (!result.canceled) {
+      setCoverImage(result.assets[0]);
+    }
+  };
+
+  const handleCreateClub = () => {
+    if (!name.trim() || selectedSportIds.length === 0) {
+      Alert.alert(
+        "Validation Error",
+        "Please provide a club name and select at least one sport."
+      );
+      return;
+    }
+    createClubMutation.mutate();
+  };
+
+  return (
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+      <View style={styles.imagePreviewContainer}>
+        <Image
+          source={{
+            uri:
+              coverImage?.uri ||
+              "https://news.sanfordhealth.org/wp-content/uploads/2022/04/Running-Outdoors_SHN-800x600-1.jpg", // TODO: update with AI image
+          }}
+          style={styles.imagePreview}
+        />
+        <View style={styles.imageEditIconContainer}>
+          <StyledIconButton icon="camera" onPress={handleSelectImage} />
+        </View>
+      </View>
+
+      <StyledTextInput label="Club Name*" value={name} onChangeText={setName} />
+      <StyledTextInput
+        label="Description"
         value={description}
         onChangeText={setDescription}
-        mode="outlined"
-        style={styles.input}
         multiline
         numberOfLines={3}
       />
 
-      <TextInput
-        label="Location (e.g., City, Park)"
-        value={locationText}
-        onChangeText={setLocationText}
-        mode="outlined"
-        style={styles.input}
-      />
-
-      <Text style={styles.label}>Sport Type(s)*</Text>
-      {loadingSportTypes ? (
-        <ActivityIndicator animating={true} style={styles.input} />
-      ) : availableSportTypes.length > 0 ? (
-        availableSportTypes.map((sport) => (
+      <StyledText variant="titleSmall">Sport Type(s)*</StyledText>
+      {isLoadingSports ? (
+        <ActivityIndicator />
+      ) : (
+        sportTypes.map((sport) => (
           <Checkbox.Item
             key={sport.id}
             label={sport.name}
             status={
-              selectedSportTypeIds.includes(sport.id) ? "checked" : "unchecked"
+              selectedSportIds.includes(sport.id) ? "checked" : "unchecked"
             }
-            onPress={() => handleToggleSportType(sport.id)}
-            position="leading" // Puts checkbox before label
-            labelStyle={styles.checkboxLabel}
-            style={styles.checkboxItem}
+            onPress={() => {
+              const newSelection = selectedSportIds.includes(sport.id)
+                ? selectedSportIds.filter((id) => id !== sport.id)
+                : [...selectedSportIds, sport.id];
+              setSelectedSportIds(newSelection);
+            }}
+            position="leading"
           />
         ))
-      ) : (
-        <Text style={styles.input}>
-          No sport types available. Please contact support.
-        </Text>
       )}
-      <HelperText type="info" visible={true} style={styles.infoText}>
-        Select at least one sport.
-      </HelperText>
 
-      <Text style={styles.label}>Privacy Setting*</Text>
+      <StyledText variant="titleSmall">Location*</StyledText>
+      <StyledText>
+        Tap on the map to set your club's primary location.
+      </StyledText>
+      <View style={styles.mapContainer}>
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          initialRegion={AMSTERDAM_COORDS}
+          onPress={handleMapPress}
+        >
+          {markerCoordinates && (
+            <Marker
+              coordinate={{
+                latitude: markerCoordinates.latitude,
+                longitude: markerCoordinates.longitude,
+              }}
+            />
+          )}
+        </MapView>
+      </View>
+      {isGeocoding ? (
+        <ActivityIndicator size="small" />
+      ) : (
+        mapDerivedAddress && <StyledText>{mapDerivedAddress}</StyledText>
+      )}
+      {!latitude ||
+        (!longitude && (
+          <StyledText color={theme.colors.error}>
+            A location selection is required.
+          </StyledText>
+        ))}
+
+      <StyledTextInput
+        label="Optional Location Details"
+        placeholder="e.g., 'Meet at the north entrance'"
+        value={locationText}
+        onChangeText={setLocationText}
+      />
+
+      <StyledText variant="titleSmall">Privacy*</StyledText>
       <SegmentedButtons
         value={privacy}
-        onValueChange={(value) =>
-          setPrivacy(value as "public" | "private" | "controlled")
-        }
+        onValueChange={(value) => setPrivacy(value as "public" | "controlled")}
         buttons={privacyOptions}
-        style={styles.input}
       />
+      <StyledText>
+        Public: anyone can join. Controlled: users must request to join.
+      </StyledText>
 
-      <TextInput
-        label="Cover Image URL (optional)"
-        value={coverImageUrl}
-        onChangeText={setCoverImageUrl}
-        mode="outlined"
-        style={styles.input}
-        keyboardType="url"
-      />
-
-      {error && (
-        <HelperText type="error" visible={!!error} style={styles.errorText}>
-          {error}
-        </HelperText>
-      )}
-
-      <Button
-        mode="contained"
+      <StyledButton
         onPress={handleCreateClub}
-        loading={loading}
-        disabled={loading || loadingSportTypes}
-        style={styles.button}
-        icon="plus-circle-outline"
+        loading={createClubMutation.isPending}
+        disabled={createClubMutation.isPending}
       >
-        {loading ? "Creating Club..." : "Create Club"}
-      </Button>
-
+        Create Club
+      </StyledButton>
       <Snackbar
         visible={snackbarVisible}
         onDismiss={() => setSnackbarVisible(false)}
         duration={3000}
-        action={{
-          label: "OK",
-          onPress: () => {
-            setSnackbarVisible(false);
-          },
-        }}
       >
         {snackbarMessage}
       </Snackbar>
@@ -254,47 +309,49 @@ const CreateClubScreen = ({ navigation }: Props) => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 20,
-    paddingVertical: 10, // Adjusted padding
-    paddingBottom: 40,
-  },
-  title: {
-    textAlign: "center",
-    marginBottom: 20,
-    marginTop: 10,
-  },
-  input: {
-    marginBottom: 10, // Adjusted margin
-  },
-  label: {
-    fontSize: 16,
-    marginBottom: 8,
-    marginTop: 12, // Adjusted margin
-    fontWeight: "600", // Make label slightly bolder
-    // color: theme.colors.onSurfaceVariant, // Example for theme usage
-  },
-  checkboxItem: {
-    // Style for the individual Checkbox.Item container if needed
-    // e.g., backgroundColor: '#f0f0f0', borderRadius: 4, marginBottom: 2
-    paddingVertical: 0, // Reduce default padding of Checkbox.Item
-  },
-  checkboxLabel: {
-    // Style for the label text of Checkbox.Item
-    // e.g., color: 'black'
-  },
-  button: {
-    marginTop: 20,
-    paddingVertical: 8,
-  },
-  errorText: {
-    // textAlign: 'center', // Center error text if preferred
-  },
-  infoText: {
-    // Helper text for sport types
-    marginBottom: 10,
-  },
-});
+const getStyles = (theme: AppTheme) =>
+  StyleSheet.create({
+    container: {
+      paddingHorizontal: 20,
+      paddingVertical: 10, // Adjusted padding
+      paddingBottom: 40,
+      gap: theme.spacing.medium,
+    },
+    checkboxItem: {
+      // Style for the individual Checkbox.Item container if needed
+      // e.g., backgroundColor: '#f0f0f0', borderRadius: 4, marginBottom: 2
+      paddingVertical: 0, // Reduce default padding of Checkbox.Item
+    },
+    checkboxLabel: {
+      // Style for the label text of Checkbox.Item
+      // e.g., color: 'black'
+    },
+    imagePreviewContainer: {
+      alignItems: "center",
+      marginBottom: 16,
+    },
+    imagePreview: {
+      width: "100%",
+      height: 200,
+      borderRadius: theme.roundness,
+      backgroundColor: theme.colors.surface,
+    },
+    imageEditIconContainer: {
+      position: "absolute",
+      bottom: theme.spacing.x_small,
+      right: theme.spacing.x_small,
+      borderRadius: 20,
+      padding: 4,
+    },
+    mapContainer: {
+      height: 250,
+      width: "100%",
+      marginBottom: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.outlineVariant,
+      borderRadius: theme.roundness,
+    },
+    map: { flex: 1 },
+  });
 
 export default CreateClubScreen;

@@ -7,10 +7,9 @@ import {
   HelperText,
   ActivityIndicator,
   Title,
-  useTheme,
   MD3Theme,
 } from "react-native-paper";
-import { EventFormData, SportType } from "./eventForm.types";
+import { SportType } from "./eventForm.types";
 
 interface ChooseSportTypesProps {
   // Receives only the part of formData and errors it cares about

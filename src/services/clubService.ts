@@ -1,12 +1,16 @@
+import { ImagePickerAsset } from "expo-image-picker";
 import { supabase } from "../lib/supabase";
 import {
   ClubJoinRequestStub,
   ClubReviewStub,
   DetailedClub,
   ListedClub,
+  UpdateClubPayload,
 } from "../types/clubTypes";
 import { SportTypeStub } from "../types/commonTypes";
 import { processSingleNestedRelation } from "./utils";
+import * as FileSystem from "expo-file-system";
+import { decode } from "base64-arraybuffer";
 
 export const fetchVisibleClubs = async (): Promise<ListedClub[]> => {
   console.log("[clubService] Fetching all visible clubs...");
@@ -218,4 +222,130 @@ export const fetchClubDetails = async (
   };
 
   return detailedClub;
+};
+
+/**
+ * Uploads a new cover image for a club and updates the club's record.
+ * @param clubId The ID of the club.
+ * @param file The local file URI from the image picker.
+ */
+export const uploadClubCoverImage = async ({
+  clubId,
+  file,
+}: {
+  clubId: string;
+  file: ImagePickerAsset;
+}) => {
+  // 1. Fetch the image data as a blob
+  const base64 = await FileSystem.readAsStringAsync(file.uri, {
+    encoding: "base64",
+  });
+
+  if (file.fileSize === 0)
+    throw new Error("Failed to read image file, fileSize is 0.");
+
+  // 2. Generate a unique file path
+  const fileExtension = file.uri.split(".").pop()?.toLowerCase() || "jpg";
+  const filePath = `${clubId}/cover.${fileExtension}?t=${new Date().getTime()}`;
+
+  // 3. Upload to Supabase Storage
+  const { error: uploadError } = await supabase.storage
+    .from("club-images")
+    .upload(filePath, decode(base64), {
+      cacheControl: "3600",
+      upsert: true,
+      contentType: file.mimeType || "image/jpeg",
+    });
+  if (uploadError) throw uploadError;
+
+  // 4. Get the public URL
+  const { data: urlData } = supabase.storage
+    .from("club-images")
+    .getPublicUrl(filePath.split("?")[0]);
+  const publicUrl = urlData.publicUrl;
+  if (!publicUrl) throw new Error("Could not get public URL for cover image.");
+
+  // 5. Update the 'clubs' table with the new URL
+  const { error: updateError } = await supabase
+    .from("clubs")
+    .update({
+      cover_image_url: publicUrl,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", clubId);
+  if (updateError) throw updateError;
+
+  return publicUrl;
+};
+
+/**
+ * Updates a club's core details and associated sport types.
+ * Calls the `update_club_details_and_sports` RPC in Supabase.
+ * @param {UpdateClubPayload} payload - The data for the club update.
+ */
+export const updateClub = async (payload: UpdateClubPayload) => {
+  console.log(`[clubService] Updating club ${payload.clubId}...`);
+
+  // The parameter keys here (p_club_id, p_name, etc.) MUST exactly match
+  // the parameter names in your PostgreSQL function definition.
+  const rpcParams = {
+    p_club_id: payload.clubId,
+    p_club_name: payload.name,
+    p_club_description: payload.description,
+    p_club_location_text: payload.location_text,
+    p_club_privacy: payload.privacy,
+    p_club_cover_image_url: payload.cover_image_url,
+    p_new_selected_sport_type_ids: payload.selected_sport_type_ids, // Ensure this name matches your DB function
+  };
+
+  const { data, error } = await supabase.rpc(
+    "update_club_details_and_sports",
+    rpcParams
+  );
+
+  if (error) {
+    console.error("[clubService] updateClub error:", error);
+    // The RLS policy and BEFORE UPDATE trigger on the 'clubs' table will be
+    // enforced by this RPC call, and will throw an error if a rule is violated
+    // (e.g., a contributor trying to change privacy).
+    throw error;
+  }
+
+  return data;
+};
+
+interface SubmitClubClaimPayload {
+  userId: string;
+  clubId: string;
+  claimDetails: string;
+}
+
+/**
+ * Submits a new claim request for an unowned club.
+ * RLS policies on the `club_claim_requests` table will be enforced by Supabase.
+ */
+export const submitClubClaim = async (payload: SubmitClubClaimPayload) => {
+  console.log(
+    `[clubRequestService] User ${payload.userId} submitting claim for club ${payload.clubId}`
+  );
+
+  const { data, error } = await supabase
+    .from("club_claim_requests")
+    .insert({
+      user_id: payload.userId,
+      club_id: payload.clubId,
+      claim_details: payload.claimDetails,
+      status: "pending",
+    })
+    .select()
+    .single();
+
+  if (error) {
+    // This will catch RLS violations, e.g., if the club is already owned
+    // or if the user has already submitted a claim.
+    console.error("[clubRequestService] submitClubClaim error:", error);
+    throw error;
+  }
+
+  return data;
 };

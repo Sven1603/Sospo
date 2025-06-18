@@ -56,7 +56,7 @@ export type ListedClub = {
   cover_image_url: string | null;
   privacy: ClubPrivacy;
   // Processed sport types
-  club_sport_types: Array<{ sport_types: SportTypeStub | null }> | null;
+  club_sport_types: Array<{ sport_types: SportTypeStub }>;
   // Optional: member_count if fetched efficiently for list view
   member_count?: number;
 };
@@ -116,4 +116,14 @@ export type ClubAdminTransferRequest = {
   initiating_admin_profile?: ProfileStub | null;
   proposed_admin_profile?: ProfileStub | null;
   // clubs?: { name: string } | null;
+};
+
+export type UpdateClubPayload = {
+  clubId: string;
+  name: string;
+  description: string | null;
+  location_text: string | null;
+  privacy: ClubPrivacy;
+  cover_image_url: string | null;
+  selected_sport_type_ids: string[];
 };

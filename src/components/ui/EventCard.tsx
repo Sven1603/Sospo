@@ -1,4 +1,9 @@
-import { StyleSheet, View } from "react-native";
+import {
+  ImageBackground,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { Card } from "react-native-paper";
 import StyledText from "./StyledText";
 import { ListedEvent } from "../../types/eventTypes";
@@ -6,6 +11,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { MainAppStackParamList } from "../../navigation/types";
 import { AppTheme, useAppTheme } from "../../theme/theme";
 import { useNavigation } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
 
 interface EventCardProps {
   event: ListedEvent;
@@ -18,8 +24,7 @@ const EventCard: React.FC<EventCardProps> = ({ event }) => {
   const navigation = useNavigation<NavigationProps>();
 
   return (
-    <Card
-      style={styles.container}
+    <TouchableOpacity
       onPress={() =>
         navigation.navigate("EventDetailScreen", {
           eventId: event.id,
@@ -27,26 +32,38 @@ const EventCard: React.FC<EventCardProps> = ({ event }) => {
         })
       }
     >
-      <View style={styles.content}>
+      <ImageBackground
+        source={{
+          uri:
+            event.cover_image_url ??
+            "https://wjnsiwaxvnavqmzprtzi.supabase.co/storage/v1/object/public/event-images//default-cover.jpg",
+        }}
+        style={styles.container}
+        imageStyle={{ borderRadius: 8 }}
+      >
+        <LinearGradient
+          colors={["transparent", "rgba(6, 26, 44, .75)"]}
+          locations={[0.15, 0.7]}
+          style={styles.colorOverlay}
+        />
         {/* {eventisParticipant && <StyledText variant="bodySmall">You're in!</StyledText>} */}
-        <View style={styles.eventDetails}>
+        <StyledText variant="bodySmall" alignCenter>
+          {new Date(event.start_time).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </StyledText>
+        <StyledText variant="titleMedium" alignCenter>
+          {event.name}
+        </StyledText>
+        {event.host_club_name && (
           <StyledText variant="bodySmall" alignCenter>
-            {new Date(event.start_time).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            by {event.host_club_name}
           </StyledText>
-          <StyledText variant="titleMedium" alignCenter>
-            {event.name}
-          </StyledText>
-          {event.host_club_name && (
-            <StyledText variant="bodySmall" alignCenter>
-              by {event.host_club_name}
-            </StyledText>
-          )}
-          {/* <View style={styles.eventSpecifics}>
+        )}
+        {/* <View style={styles.eventSpecifics}>
         {eventDetails && (
           <>
             {eventDetails.distance && (
@@ -61,37 +78,26 @@ const EventCard: React.FC<EventCardProps> = ({ event }) => {
         )}
         <StyledText variant="bodySmall">{participantCount}</StyledText>
       </View> */}
-        </View>
-      </View>
-    </Card>
+      </ImageBackground>
+    </TouchableOpacity>
   );
 };
 
 const getStyles = (theme: AppTheme) =>
   StyleSheet.create({
     container: {
-      borderRadius: 8,
       width: 256,
       height: 151,
+      borderRadius: 8,
       backgroundColor: theme.colors.surface,
       marginRight: theme.spacing.medium,
       padding: theme.padding.small,
+      justifyContent: "flex-end",
+      alignItems: "center",
     },
-    content: {
-      position: "relative",
-      width: "100%",
-      height: "100%",
-      justifyContent: "center",
-    },
-    eventDetails: {
-      position: "absolute",
-      width: "100%",
-      bottom: 5,
-      gap: theme.spacing.x_small,
-    },
-    eventSpecifics: {
-      display: "flex",
-      gap: 16,
+    colorOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      borderRadius: 8,
     },
   });
 

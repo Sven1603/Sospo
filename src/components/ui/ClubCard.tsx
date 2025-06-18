@@ -1,11 +1,11 @@
-import { StyleSheet, View } from "react-native";
-import { Card, MD3Theme, useTheme } from "react-native-paper";
+import { ImageBackground, StyleSheet, TouchableOpacity } from "react-native";
 import StyledText from "./StyledText";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { MainAppStackParamList } from "../../navigation/types";
 import { ListedClub } from "../../types/clubTypes";
 import { AppTheme, useAppTheme } from "../../theme/theme";
 import { useNavigation } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
 
 type ClubCardProps = {
   club: ListedClub;
@@ -18,57 +18,60 @@ const ClubCard: React.FC<ClubCardProps> = ({ club }) => {
   const navigation = useNavigation<NavigationProps>();
 
   return (
-    <Card
-      style={styles.container}
+    <TouchableOpacity
       onPress={() =>
         navigation.navigate("ClubDetail", {
           clubId: club.id,
         })
       }
     >
-      <View style={styles.content}>
-        {/* {isMember && <StyledText variant="bodySmall">You're in!</StyledText>} */}
-        <View style={styles.clubDetails}>
-          <StyledText variant="titleMedium" alignCenter>
-            {club.name}
+      <ImageBackground
+        source={{
+          uri:
+            club.cover_image_url ??
+            "https://cdn.pixabay.com/photo/2021/12/12/20/00/play-6865967_640.jpg",
+        }}
+        style={styles.container}
+        imageStyle={{ borderRadius: 8 }}
+      >
+        <LinearGradient
+          colors={["transparent", "rgba(6, 26, 44, .75)"]}
+          locations={[0.15, 0.7]}
+          style={styles.colorOverlay}
+        />
+        <StyledText variant="titleMedium" alignCenter>
+          {club.name}
+        </StyledText>
+        {club.location_text !== null && (
+          <StyledText variant="bodySmall" alignCenter>
+            {club.location_text}
           </StyledText>
-          {club.location_text !== null && (
-            <StyledText variant="bodySmall" alignCenter>
-              {club.location_text}
-            </StyledText>
-          )}
-          {club.member_count && (
-            <StyledText variant="bodySmall" alignCenter>
-              {club.member_count} members
-            </StyledText>
-          )}
-        </View>
-      </View>
-    </Card>
+        )}
+        {club.member_count && club.member_count > 0 && (
+          <StyledText variant="bodySmall" alignCenter>
+            {club.member_count} members
+          </StyledText>
+        )}
+      </ImageBackground>
+    </TouchableOpacity>
   );
 };
 
 const getStyles = (theme: AppTheme) =>
   StyleSheet.create({
     container: {
-      borderRadius: 8,
       width: 217,
       height: 148,
+      borderRadius: 8,
       backgroundColor: theme.colors.surface,
       marginRight: theme.spacing.medium,
       padding: theme.padding.small,
+      justifyContent: "flex-end",
+      alignItems: "center",
     },
-    content: {
-      position: "relative",
-      width: "100%",
-      height: "100%",
-      justifyContent: "center",
-    },
-    clubDetails: {
-      position: "absolute",
-      width: "100%",
-      bottom: 5,
-      gap: theme.spacing.x_small,
+    colorOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      borderRadius: 8,
     },
   });
 

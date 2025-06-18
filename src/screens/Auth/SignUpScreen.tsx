@@ -9,6 +9,7 @@ import StyledText from "../../components/ui/StyledText";
 import StyledButton from "../../components/ui/StyledButton";
 import { AppTheme, useAppTheme } from "../../theme/theme";
 import StyledTextInput from "../../components/ui/StyledTextInput";
+import { signUpSchema } from "./schemas";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "SignUp">;
 
@@ -18,37 +19,59 @@ const SignUpScreen = ({ navigation }: Props) => {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
-  const [errorText, setErrorText] = useState("");
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
 
   const handleSignUp = async () => {
     setLoading(true);
-    setErrorText(""); // Clear previous errors
+    setErrors({});
 
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password: password,
+    // 1. Validate inputs with Zod
+    const validationResult = signUpSchema.safeParse({
+      email,
+      password,
+      username,
     });
 
-    setLoading(false);
+    if (!validationResult.success) {
+      const zodErrors = validationResult.error.flatten().fieldErrors;
+      const newErrors: Record<string, string | undefined> = {};
+      if (zodErrors.email) newErrors.email = zodErrors.email[0];
+      if (zodErrors.password) newErrors.password = zodErrors.password[0];
+      if (zodErrors.username) newErrors.username = zodErrors.username[0];
+      setErrors(newErrors);
+      setLoading(false);
+      return;
+    }
+
+    // 2. Call Supabase signUp with username in metadata
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.signUp({
+      email: validationResult.data.email,
+      password: validationResult.data.password,
+      options: {
+        // This 'data' is passed as user_metadata and picked up by our trigger
+        data: {
+          username: validationResult.data.username,
+          // full_name could be added here too if collected on sign-up
+        },
+      },
+    });
 
     if (error) {
-      console.error("Sign up error:", error.message);
-      setErrorText(error.message);
-      // Alert.alert('Sign Up Error', error.message); // Simple alert
-    } else if (data.session) {
-      // Sign up was successful and session is created (if email confirmation is off or auto-confirmed)
-      // The onAuthStateChange listener in App.tsx should handle navigation
-      console.log("Sign up successful, session:", data.session);
-    } else if (data.user && !data.session) {
-      // Sign up successful, but requires email confirmation
+      Alert.alert("Sign Up Error", error.message);
+    } else if (!session) {
       Alert.alert(
         "Sign Up Successful!",
-        "Please check your email to confirm your account."
+        "Please check your inbox for a verification email to complete the registration.",
+        [{ text: "Login now", onPress: () => navigation.navigate("Login") }]
       );
-      // Optionally navigate to login or a specific "check email" screen
-      navigation.navigate("Login");
     }
+    // onAuthStateChange listener will handle navigation
+    setLoading(false);
   };
 
   return (
@@ -59,11 +82,18 @@ const SignUpScreen = ({ navigation }: Props) => {
 
       <View style={styles.inputContainer}>
         <StyledTextInput
+          label="Username"
+          value={username}
+          onChangeText={setUsername}
+          errorText={errors.username}
+        />
+        <StyledTextInput
           label="Email"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
+          errorText={errors.email}
         />
 
         <StyledTextInput
@@ -71,18 +101,9 @@ const SignUpScreen = ({ navigation }: Props) => {
           value={password}
           onChangeText={setPassword}
           secureTextEntry
+          errorText={errors.password}
         />
       </View>
-
-      {!!errorText && (
-        <StyledText
-          variant="bodyLarge"
-          color={theme.colors.error}
-          mb={theme.spacing.small}
-        >
-          {errorText}
-        </StyledText>
-      )}
 
       <StyledButton
         onPress={handleSignUp}

@@ -133,18 +133,30 @@ const EventsScreen = () => {
         keyExtractor={(item) => item.id}
         renderItem={renderEventItem}
         renderSectionHeader={({ section: { title } }) => (
-          <StyledText>{title}</StyledText>
+          <View style={styles.sectionHeader}>
+            <StyledText>{title}</StyledText>
+          </View>
         )}
         stickySectionHeadersEnabled={true}
         ListHeaderComponent={
           <>
             {/* Your filter buttons can go here */}
             <View style={{ flexDirection: "row", paddingHorizontal: 16 }}>
-              <StyledButton variant="outline">Type</StyledButton>
-              <StyledButton variant="outline" style={{ marginRight: 8 }}>
+              <StyledButton variant="outline" size="small">
+                Type
+              </StyledButton>
+              <StyledButton
+                variant="outline"
+                size="small"
+                mr={theme.spacing.medium}
+              >
                 Location
               </StyledButton>
-              <StyledButton variant="outline" icon="filter-variant">
+              <StyledButton
+                variant="outline"
+                size="small"
+                icon="filter-variant"
+              >
                 More filters
               </StyledButton>
             </View>
@@ -224,12 +236,8 @@ const getStyles = (theme: AppTheme) =>
     fab: { position: "absolute", margin: 16, right: 0, bottom: 0 },
     loader: { flex: 1, justifyContent: "center", alignItems: "center" }, // Not explicitly used if using centered
     sectionHeader: {
-      paddingHorizontal: 16,
-      paddingTop: 16,
-      paddingBottom: 8,
-      fontSize: 14,
-      fontWeight: "bold",
-      color: theme.colors.onSurfaceVariant,
+      paddingHorizontal: 20,
+      paddingVertical: 8,
       backgroundColor: theme.colors.surface,
     },
   });

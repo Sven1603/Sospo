@@ -16,15 +16,13 @@ const StyledTextInput: React.FC<StyledTextInputProps> = ({
 
   return (
     <View style={styles.container}>
-      <TextInput mode="outlined" {...rest} />
+      <TextInput mode="outlined" error={errorText ? true : false} {...rest} />
       {errorText && (
-        <StyledText
-          variant="bodyLarge"
-          xs={{ color: theme.colors.error }}
-          ml={17}
-        >
-          {errorText}
-        </StyledText>
+        <View style={styles.errorContainer}>
+          <StyledText variant="bodyLarge" xs={{ color: theme.colors.error }}>
+            {errorText}
+          </StyledText>
+        </View>
       )}
     </View>
   );
@@ -35,6 +33,10 @@ const getStyles = (theme: AppTheme) =>
     container: {
       display: "flex",
       gap: theme.spacing.small,
+    },
+    errorContainer: {
+      marginVertical: 0,
+      paddingHorizontal: 17,
     },
   });
 

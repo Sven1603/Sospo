@@ -1,9 +1,8 @@
 import { StyleSheet, TextStyle, ViewStyle } from "react-native";
 import { Text, TextProps } from "react-native-paper";
 import { AppTheme, useAppTheme } from "../../theme/theme";
-import { MD3Colors } from "react-native-paper/lib/typescript/types";
 
-const FONT_SIZE = 12;
+const DEFAULT_FONT_SIZE = 14;
 
 interface StyledTextProps extends TextProps<string> {
   alignCenter?: boolean;
@@ -34,32 +33,35 @@ const StyledText: React.FC<StyledTextProps> = ({
     switch (variant) {
       case "bodySmall":
         return {
-          fontSize: FONT_SIZE * 0.9,
+          fontSize: DEFAULT_FONT_SIZE * 0.9,
+          lineHeight: DEFAULT_FONT_SIZE * 0.9 * 1.2,
         };
       case "bodyMedium":
         return {
-          fontSize: FONT_SIZE,
+          fontSize: DEFAULT_FONT_SIZE,
+          lineHeight: DEFAULT_FONT_SIZE * 1.2,
         };
       case "bodyLarge":
         return {
-          fontSize: FONT_SIZE * 1.2,
+          fontSize: DEFAULT_FONT_SIZE * 1.2,
+          lineHeight: DEFAULT_FONT_SIZE * 1.2 * 1.2,
         };
       case "titleSmall":
         return {
-          fontSize: FONT_SIZE * 1.3,
+          fontSize: DEFAULT_FONT_SIZE * 1.3,
           fontWeight: "semibold",
           fontFamily: "LeagueSpartan-SemiBold",
         };
       case "titleMedium":
         return {
-          fontSize: FONT_SIZE * 1.8,
+          fontSize: DEFAULT_FONT_SIZE * 1.8,
           fontWeight: "semibold",
           fontFamily: "LeagueSpartan-SemiBold",
           marginBottom: theme.spacing.small,
         };
       case "titleLarge":
         return {
-          fontSize: FONT_SIZE * 2.1,
+          fontSize: DEFAULT_FONT_SIZE * 2.1,
           fontWeight: "semibold",
           fontFamily: "LeagueSpartan-SemiBold",
         };

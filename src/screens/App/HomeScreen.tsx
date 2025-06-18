@@ -57,7 +57,7 @@ const HomeScreen = () => {
     error: clubsError,
     refetch: refetchVisibleClubs,
   } = useQuery({
-    queryKey: ["clubs"],
+    queryKey: ["visibleClubs"],
     queryFn: fetchVisibleClubs,
   });
 
@@ -180,6 +180,7 @@ const getStyles = (theme: AppTheme) =>
       justifyContent: "center",
       alignItems: "center",
       padding: 20,
+      backgroundColor: theme.colors.background,
     },
     errorText: {
       color: theme.colors.error,

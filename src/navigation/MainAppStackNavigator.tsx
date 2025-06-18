@@ -30,6 +30,7 @@ import EventFormWizard from "../screens/App/Events/EventForm/EventFormWizard";
 import EventDetailScreen from "../screens/App/Events/EventDetailScreen";
 import EventSettingsScreen from "../screens/App/Events/EventSettingsScreen";
 import ManageEventJoinRequestsScreen from "../screens/App/Events/ManageEventJoinRequestsScreen";
+import ManageClubClaimsScreen from "../screens/App/Admin/ManageClubClaimsScreen";
 
 const Stack = createNativeStackNavigator<MainAppStackParamList>();
 
@@ -91,6 +92,11 @@ const MainAppStackNavigator = () => {
         })}
       />
       <Stack.Screen
+        name="ManageClubClaims"
+        component={ManageClubClaimsScreen}
+        options={{ title: "Admin: Club Claims" }}
+      />
+      <Stack.Screen
         name="Profile"
         component={ProfileScreen}
         options={{
@@ -111,8 +117,9 @@ const MainAppStackNavigator = () => {
       <Stack.Screen
         name="ClaimClub"
         component={ClaimClubScreen}
-        options={({ route }) => ({
-          title: `Claim "${route.params.clubName}"`,
+        options={() => ({
+          title: `Claim club`,
+          headerLeft: undefined,
         })}
       />
       <Stack.Screen

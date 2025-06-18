@@ -1,7 +1,8 @@
 import React from "react";
-import { Button, useTheme } from "react-native-paper";
-import type { ButtonProps, MD3Theme } from "react-native-paper";
+import { Button } from "react-native-paper";
+import type { ButtonProps } from "react-native-paper";
 import { StyleSheet, TextStyle, ViewStyle } from "react-native";
+import { AppTheme, useAppTheme } from "../../theme/theme";
 
 const BORDER_RADIUS = 32;
 
@@ -26,7 +27,7 @@ const StyledButton: React.FC<StyledButtonProps> = ({
   mb,
   ...rest
 }) => {
-  const theme = useTheme();
+  const theme = useAppTheme();
   const styles = getStyles(theme);
 
   const getButtonStyles = (): ViewStyle => {
@@ -89,19 +90,19 @@ const StyledButton: React.FC<StyledButtonProps> = ({
     switch (size) {
       case "small":
         return {
-          paddingVertical: 5,
+          paddingVertical: theme.spacing.x_small * 0.5,
           paddingHorizontal: 10,
           borderRadius: BORDER_RADIUS * 2,
         };
       case "medium":
         return {
-          paddingVertical: 8,
+          paddingVertical: theme.spacing.x_small,
           paddingHorizontal: 20,
           borderRadius: BORDER_RADIUS,
         };
       case "large":
         return {
-          paddingVertical: 12,
+          paddingVertical: theme.spacing.x_small * 2,
           paddingHorizontal: 30,
           borderRadius: BORDER_RADIUS * 3,
         };
@@ -163,10 +164,10 @@ const StyledButton: React.FC<StyledButtonProps> = ({
   );
 };
 
-const getStyles = (theme: MD3Theme) =>
+const getStyles = (theme: AppTheme) =>
   StyleSheet.create({
     defaultButton: {
-      marginVertical: 5,
+      marginVertical: theme.spacing.medium,
     },
     defaultLabel: {
       fontFamily: "LeagueSpartan-SemiBold",
