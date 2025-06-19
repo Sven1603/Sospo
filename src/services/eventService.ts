@@ -427,6 +427,54 @@ export const fetchMyUpcomingAttendingEvents = async (
   }) as ListedEvent[];
 };
 
-// You would add functions for event_join_requests here too
-// export const fetchEventJoinRequests = async (eventId: string): Promise<EventJoinRequest[]> => { ... }
-// export const respondToEventJoinRequest = async ({ requestId, newStatus, reviewerId }) => { ... }
+/**
+ * Fetches all events (both past and future) for a specific club.
+ * @param clubId The ID of the club whose events are to be fetched.
+ */
+export const fetchEventsForClub = async (
+  clubId: string
+): Promise<ListedEvent[]> => {
+  if (!clubId) return [];
+  console.log(`[eventService] Fetching all events for club ${clubId}...`);
+
+  const { data, error } = await supabase
+    .from("events")
+    .select(
+      `
+      id, name, start_time, end_time, location_text, cover_image_url,
+      sport_specific_attributes,
+      event_participants ( count )
+    `
+    )
+    .eq("club_id", clubId)
+    .order("start_time", { ascending: false }); // Order by most recent first
+
+  if (error) {
+    console.error("[eventService] fetchEventsForClub error:", error);
+    throw error;
+  }
+
+  if (!data) return [];
+
+  return data.map((event: any) => ({
+    id: event.id,
+    name: event.name,
+    description: event.description,
+    start_time: event.start_time,
+    location_text: event.location_text,
+    cover_image_url: event.cover_image_url,
+    club_id: event.club_id,
+    privacy: event.privacy,
+    max_participants: event.max_participants,
+    host_club_name: event.host_club
+      ? processSingleNestedRelation(event.host_club)?.name
+      : null,
+    event_sport_types: (event.event_sport_types || [])
+      .map((est: any) => ({
+        sport_types: processSingleNestedRelation(
+          est.sport_types
+        ) as SportTypeStub | null,
+      }))
+      .filter((est: any) => est.sport_types !== null),
+  })) as ListedEvent[];
+};

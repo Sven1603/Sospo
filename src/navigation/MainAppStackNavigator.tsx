@@ -31,6 +31,7 @@ import EventDetailScreen from "../screens/App/Events/EventDetailScreen";
 import EventSettingsScreen from "../screens/App/Events/EventSettingsScreen";
 import ManageEventJoinRequestsScreen from "../screens/App/Events/ManageEventJoinRequestsScreen";
 import ManageClubClaimsScreen from "../screens/App/Admin/ManageClubClaimsScreen";
+import { useAppTheme } from "../theme/theme";
 
 const Stack = createNativeStackNavigator<MainAppStackParamList>();
 
@@ -49,7 +50,7 @@ const getHeaderTitle = (route: RouteProp<MainAppStackParamList, "AppTabs">) => {
 };
 
 const MainAppStackNavigator = () => {
-  const theme = useTheme();
+  const theme = useAppTheme();
 
   return (
     <Stack.Navigator
@@ -59,7 +60,6 @@ const MainAppStackNavigator = () => {
         theme: Theme;
       }): NativeStackNavigationOptions => ({
         contentStyle: {
-          paddingVertical: 24,
           backgroundColor: theme.colors.background,
         },
         headerStyle: {

@@ -1,6 +1,6 @@
 // src/screens/App/Home/HomeScreen.tsx
-import React, { JSX, useEffect } from "react";
-import { View, StyleSheet, ScrollView, FlatList } from "react-native";
+import React, { useEffect } from "react";
+import { View, StyleSheet, ScrollView } from "react-native";
 import { ActivityIndicator } from "react-native-paper";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
@@ -10,13 +10,10 @@ import { MainAppStackParamList } from "../../navigation/types";
 import { fetchUpcomingEvents as fetchDiscoverEvents } from "../../services/eventService";
 import { fetchVisibleClubs } from "../../services/clubService";
 import { supabase } from "../../lib/supabase";
-import { ListedClub } from "../../types/clubTypes";
-import { ListedEvent } from "../../types/eventTypes";
 import EventCard from "../../components/ui/EventCard";
-import StyledText from "../../components/ui/StyledText";
-import StyledButton from "../../components/ui/StyledButton";
 import ClubCard from "../../components/ui/ClubCard";
 import { AppTheme, useAppTheme } from "../../theme/theme";
+import HorizontalListSection from "../../components/ui/HorizontalListSection";
 
 type HomeScreenNavigationProp =
   NativeStackNavigationProp<MainAppStackParamList>;
@@ -61,62 +58,6 @@ const HomeScreen = () => {
     queryFn: fetchVisibleClubs,
   });
 
-  const renderSection = <T,>(
-    title: string,
-    data: T[] | undefined,
-    isLoading: boolean,
-    isError: boolean,
-    error: Error | null,
-    renderItem: ({ item }: { item: T }) => JSX.Element,
-    onSeeAllPress?: () => void,
-    emptyMessage: string = "Nothing here yet."
-  ) => {
-    if (isLoading)
-      return (
-        <View>
-          <ActivityIndicator style={{ marginTop: 20 }} />
-        </View>
-      );
-    if (isError)
-      return (
-        <View>
-          <StyledText style={styles.errorText}>
-            Error loading {title.toLowerCase()}: {error?.message}
-          </StyledText>
-        </View>
-      );
-    if (!data || data.length === 0)
-      return (
-        <View>
-          <View style={styles.sectionHeader}>
-            <StyledText variant="titleMedium">{title}</StyledText>
-          </View>
-          <StyledText variant="bodyMedium">{emptyMessage}</StyledText>
-        </View>
-      );
-
-    return (
-      <View>
-        <View style={styles.sectionHeader}>
-          <StyledText variant="titleMedium">{title}</StyledText>
-          {onSeeAllPress && (
-            <StyledButton variant="link" size="small" onPress={onSeeAllPress}>
-              See All
-            </StyledButton>
-          )}
-        </View>
-        <FlatList
-          data={data.slice(0, 5)} // Show first 5 items for example
-          renderItem={renderItem}
-          keyExtractor={(item: any) => item.id.toString()}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.horizontalListContent}
-        />
-      </View>
-    );
-  };
-
   if (isLoadingClubs && isLoadingDiscoverEvents) {
     // Very initial loading
     return (
@@ -131,31 +72,32 @@ const HomeScreen = () => {
       style={styles.container}
       contentContainerStyle={styles.scrollViewContent}
     >
-      {renderSection(
-        "Discover clubs",
-        clubs,
-        isLoadingClubs,
-        isClubsError,
-        clubsError,
-        ({ item }) => (
-          <ClubCard club={item as ListedClub} />
-        ),
-        () => navigation.navigate("AppTabs", { screen: "Clubs" }),
-        "You haven't joined any clubs yet. Go explore!"
-      )}
-
-      {renderSection(
-        "Upcoming events",
-        discoverEvents,
-        isLoadingDiscoverEvents,
-        isDiscoverEventsError,
-        discoverEventsError,
-        ({ item }) => (
-          <EventCard event={item as ListedEvent} />
-        ),
-        () => navigation.navigate("AppTabs", { screen: "Events" }),
-        "No public events found right now."
-      )}
+      <HorizontalListSection
+        title="Discover Clubs"
+        data={clubs.slice(0, 5)}
+        renderItem={({ item }) => <ClubCard club={item} />}
+        keyExtractor={(item) => item.id}
+        isLoading={isLoadingClubs}
+        isError={isClubsError}
+        error={clubsError}
+        onSeeAllPress={() =>
+          navigation.navigate("AppTabs", { screen: "Clubs" })
+        }
+        emptyMessage="You haven't joined any clubs yet."
+      />
+      <HorizontalListSection
+        title="Discover Public Events"
+        data={discoverEvents.slice(0, 5)}
+        renderItem={({ item }) => <EventCard event={item} />}
+        keyExtractor={(item) => item.id}
+        isLoading={isLoadingDiscoverEvents}
+        isError={isDiscoverEventsError}
+        error={discoverEventsError}
+        onSeeAllPress={() =>
+          navigation.navigate("AppTabs", { screen: "Events" })
+        }
+        emptyMessage="No public events found right now."
+      />
     </ScrollView>
   );
 };

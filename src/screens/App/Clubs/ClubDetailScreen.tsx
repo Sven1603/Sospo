@@ -1,20 +1,13 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
   StyleSheet,
   ScrollView,
-  Image,
   Alert,
   TouchableOpacity,
   ImageBackground,
 } from "react-native";
-import {
-  Text,
-  ActivityIndicator,
-  Chip,
-  Button,
-  IconButton,
-} from "react-native-paper";
+import { ActivityIndicator } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MainAppStackParamList } from "../../../navigation/types";
 import { supabase } from "../../../lib/supabase";
@@ -34,6 +27,11 @@ import {
   joinPublicClub,
   requestToJoinClub,
 } from "../../../services/clubMemberService";
+import { ListedEvent } from "../../../types/eventTypes";
+import { fetchEventsForClub } from "../../../services/eventService";
+import EventCard from "../../../components/ui/EventCard";
+import StyledChip from "../../../components/ui/StyledChip";
+import HorizontalListSection from "../../../components/ui/HorizontalListSection";
 
 type Props = NativeStackScreenProps<
   MainAppStackParamList,
@@ -45,9 +43,6 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
   const { clubId } = route.params;
   const theme = useAppTheme();
   const styles = getStyles(theme);
-
-  const [claimDetails, setClaimDetails] = useState("");
-  const [errorText, setErrorText] = useState("");
 
   const queryClient = useQueryClient();
 
@@ -98,6 +93,40 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
     };
   }, [club, currentUserAuthId]);
 
+  const { data: allClubEvents = [], isLoading: isLoadingEvents } = useQuery({
+    queryKey: ["clubEvents", clubId],
+    queryFn: () => fetchEventsForClub(clubId),
+    enabled: !!clubId,
+  });
+
+  // --- Use useMemo to split events into upcoming and past ---
+  const { upcomingEvents, pastEvents } = useMemo((): {
+    upcomingEvents: ListedEvent[];
+    pastEvents: ListedEvent[];
+  } => {
+    const now = new Date();
+    const upcoming: ListedEvent[] = [];
+    const past: ListedEvent[] = [];
+
+    for (const event of allClubEvents) {
+      if (new Date(event.start_time) >= now) {
+        upcoming.push(event);
+      } else {
+        past.push(event);
+      }
+    }
+    // Ensure upcoming are sorted ascending (soonest first)
+    upcoming.sort(
+      (a, b) =>
+        new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+    );
+    // Past events are already sorted descending by the query
+    return { upcomingEvents: upcoming, pastEvents: past };
+  }, [allClubEvents]);
+
+  console.log("Upcoming:", upcomingEvents);
+  console.log("Past events:", pastEvents);
+
   // --- Mutations for Club Actions ---
   const joinClubMutation = useMutation({
     mutationFn: joinPublicClub, // Assumes this function exists in clubMemberService.ts
@@ -136,24 +165,26 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
     return (
       <View style={styles.centered}>
         <ActivityIndicator animating={true} size="large" />
-        <Text style={{ marginTop: 10 }}>Loading Club...</Text>
+        <StyledText>Loading Club...</StyledText>
       </View>
     );
   }
   if (isClubError) {
     return (
       <View style={styles.centered}>
-        <Text style={{ color: theme.colors.error }}>
+        <StyledText color={theme.colors.error}>
           Error: {clubFetchError.message}
-        </Text>
-        <Button onPress={() => refetchClubDetails()}>Try Again</Button>
+        </StyledText>
+        <StyledButton variant="outline" onPress={() => refetchClubDetails()}>
+          Try Again
+        </StyledButton>
       </View>
     );
   }
   if (!club) {
     return (
       <View style={styles.centered}>
-        <Text>Club not found.</Text>
+        <StyledText>Club not found.</StyledText>
       </View>
     );
   }
@@ -215,6 +246,19 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
     userRelationship.isContributor ||
     userRelationship.isOwner;
 
+  const getSportChipIcon = (sportName: string) => {
+    switch (sportName) {
+      case "Run":
+        return "run";
+      case "Swim":
+        return "swim";
+      case "Cycle":
+        return "bike";
+      default:
+        return "";
+    }
+  };
+
   return (
     <SafeAreaView style={styles.outerContainerForFab}>
       <ScrollView style={styles.scrollView}>
@@ -261,76 +305,100 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
           </ImageBackground>
         </View>
 
-        <View style={styles.contentContainer}>
-          {primaryActionContent}
+        <View>
+          <View style={styles.contentContainer}>
+            {primaryActionContent}
 
-          {club.review_count !== null && club.review_count > 0 ? (
-            <TouchableOpacity
-              onPress={() =>
-                navigation.navigate("ClubReviewsScreen", {
-                  clubId: club.id,
-                  clubName: club.name,
-                  averageRating: club.average_rating,
-                  reviewCount: club.review_count,
-                })
-              }
-              style={styles.ratingContainer}
-            >
-              <MaterialCommunityIcons
-                name="star"
-                size={20}
-                color={theme.colors.primary}
-              />
-              <Text
-                style={[styles.ratingText, { color: theme.colors.primary }]}
+            {club.review_count !== null && club.review_count > 0 ? (
+              <TouchableOpacity
+                onPress={() =>
+                  navigation.navigate("ClubReviewsScreen", {
+                    clubId: club.id,
+                    clubName: club.name,
+                    averageRating: club.average_rating,
+                    reviewCount: club.review_count,
+                  })
+                }
+                style={styles.ratingContainer}
               >
-                {Number(club.average_rating).toFixed(1)}
-              </Text>
-              <Text style={styles.reviewCountText}>
-                ({club.review_count} review{club.review_count === 1 ? "" : "s"})
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            // Optionally show "No reviews yet" or nothing if no reviews
-            <TouchableOpacity
-              onPress={() =>
-                navigation.navigate("ClubReviewsScreen", {
-                  clubId: club.id,
-                  clubName: club.name,
-                  averageRating: null,
-                  reviewCount: 0,
-                })
-              }
-              style={styles.ratingContainer} // So user can still navigate to see if they can add one
-            >
-              <Text style={styles.reviewCountText}>
-                No reviews yet. Be the first!
-              </Text>
-            </TouchableOpacity>
-          )}
+                <MaterialCommunityIcons
+                  name="star"
+                  size={20}
+                  color={theme.colors.primary}
+                />
+                <StyledText color={theme.colors.primary}>
+                  {Number(club.average_rating).toFixed(1)}
+                </StyledText>
+                <StyledText>
+                  ({club.review_count} review
+                  {club.review_count === 1 ? "" : "s"})
+                </StyledText>
+              </TouchableOpacity>
+            ) : (
+              // Optionally show "No reviews yet" or nothing if no reviews
+              <TouchableOpacity
+                onPress={() =>
+                  navigation.navigate("ClubReviewsScreen", {
+                    clubId: club.id,
+                    clubName: club.name,
+                    averageRating: null,
+                    reviewCount: 0,
+                  })
+                }
+                style={styles.ratingContainer} // So user can still navigate to see if they can add one
+              >
+                <StyledText>No reviews yet. Be the first!</StyledText>
+              </TouchableOpacity>
+            )}
 
-          {club.description && (
-            <View>
-              <StyledText variant="titleMedium">About</StyledText>
-              <StyledText>{club.description}</StyledText>
-            </View>
-          )}
-
-          <View style={styles.chipContainer}>
-            {club.club_sport_types?.map((cst, index) => {
-              const sportName = cst.sport_types?.name;
-              const sportId = cst.sport_types?.id;
-              return sportName && sportId ? (
-                <Chip
-                  key={sportId + index}
-                  icon="tag-outline"
-                  style={styles.chip}
-                >
-                  {sportName}
-                </Chip>
-              ) : null;
-            })}
+            {club.description && (
+              <View>
+                <StyledText variant="titleMedium">About</StyledText>
+                <View style={styles.chipContainer}>
+                  {club.club_sport_types?.map((cst, index) => {
+                    const sportName = cst.sport_types?.name;
+                    const sportId = cst.sport_types?.id;
+                    return sportName && sportId ? (
+                      <StyledChip
+                        key={sportId + index}
+                        icon={getSportChipIcon(cst.sport_types.name)}
+                      >
+                        {sportName}
+                      </StyledChip>
+                    ) : null;
+                  })}
+                </View>
+                <StyledText>{club.description}</StyledText>
+              </View>
+            )}
           </View>
+
+          <HorizontalListSection
+            title="Upcoming Events"
+            data={upcomingEvents}
+            renderItem={({ item }) => <EventCard event={item} />}
+            keyExtractor={(item) => item.id}
+            isLoading={isLoadingEvents}
+            isError={false} // Error handling for this query can be added if needed
+            error={null}
+            onSeeAllPress={() =>
+              navigation.navigate("AppTabs", { screen: "Events" })
+            }
+            emptyMessage="No upcoming events scheduled."
+          />
+
+          {/* --- Use the new component for Past Events --- */}
+          <HorizontalListSection
+            title="Past Events"
+            data={pastEvents}
+            renderItem={({ item }) => <EventCard event={item} />}
+            keyExtractor={(item) => item.id}
+            isLoading={isLoadingEvents}
+            isError={false}
+            error={null}
+            // No "Show all" for past events for now
+            emptyMessage="No past events yet."
+          />
         </View>
       </ScrollView>
       {(userRelationship.isOwner ||
@@ -389,15 +457,13 @@ const getStyles = (theme: AppTheme) =>
       backgroundColor: theme.colors.background,
       opacity: 0.5,
     },
-    contentContainer: { padding: 20 },
-    actionButton: { marginTop: 16, marginBottom: 16 },
-    divider: { marginVertical: 16 },
+    contentContainer: { padding: 16 },
     chipContainer: {
       flexDirection: "row",
       flexWrap: "wrap",
-      marginVertical: theme.spacing.small,
+      marginBottom: theme.spacing.x_small,
+      gap: theme.spacing.small,
     },
-    chip: { marginRight: 8, marginBottom: 8 },
     centered: {
       flex: 1,
       justifyContent: "center",
@@ -408,29 +474,24 @@ const getStyles = (theme: AppTheme) =>
       flexDirection: "row",
       alignItems: "center",
       marginBottom: 8,
-      marginTop: 4, // Adjust as needed
-    },
-    ratingText: {
-      fontSize: 16,
-      fontWeight: "bold",
-      marginLeft: 4,
-      color: theme.colors.primary,
-    },
-    reviewCountText: {
-      fontSize: 14,
-      marginLeft: 6,
-      color: "gray",
+      marginTop: 4,
     },
     reviewActionContainer: {
       marginVertical: 10,
-      alignItems: "center", // Center the button
-    },
-    reviewButton: {
-      // width: '80%', // Or some appropriate width
+      alignItems: "center",
     },
     outerContainerForFab: {
       flex: 1,
       backgroundColor: theme.colors.background,
+    },
+    sectionHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    horizontalListContent: {
+      paddingLeft: 16,
+      paddingRight: 6,
     },
   });
 
