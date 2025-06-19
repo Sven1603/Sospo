@@ -5,6 +5,7 @@ import type {
   ListedEvent,
   DetailedEventData,
   EventJoinRequestData,
+  EventRow,
 } from "../types/eventTypes"; // Adjust path to your centralized event types
 
 // Helper to consistently process Supabase's nested relation data
@@ -476,5 +477,137 @@ export const fetchEventsForClub = async (
         ) as SportTypeStub | null,
       }))
       .filter((est: any) => est.sport_types !== null),
+  })) as ListedEvent[];
+};
+
+/**
+ * Fetches all upcoming events organized by the current user.
+ * This includes events they created directly or events hosted by clubs they are staff of.
+ * Calls the `get_my_organized_events` RPC.
+ */
+export const fetchMyOrganizedEvents = async (): Promise<ListedEvent[]> => {
+  console.log(`[eventService] Fetching organized events for current user...`);
+  const now = new Date().toISOString();
+
+  // Call the RPC to get the IDs of all events the user organizes
+  const { data: eventRows, error: rpcError } = await supabase.rpc(
+    "get_my_organized_events"
+  );
+
+  if (rpcError) {
+    console.error("[eventService] fetchMyOrganizedEvents RPC error:", rpcError);
+    throw rpcError;
+  }
+
+  // Cast the rpcData to our defined type to remove the 'any' type
+  const rpcData = eventRows as EventRow[];
+
+  if (!rpcData || rpcData.length === 0) {
+    return [];
+  }
+
+  // Now TypeScript knows that `event` has an `id` property of type string.
+  const eventIds = rpcData.map((event) => event.id);
+
+  // Fetch the full details for the identified events
+  const { data, error } = await supabase
+    .from("events")
+    .select(
+      `
+      id, name, description, start_time, end_time, location_text, cover_image_url, 
+      club_id, privacy, max_participants,
+      host_club:clubs ( name ),
+      event_participants ( count ),
+      event_sport_types ( sport_types ( id, name ) )
+    `
+    )
+    .in("id", eventIds) // Fetch details for the events we identified
+    .gte("start_time", now) // Filter for only upcoming ones
+    .order("start_time", { ascending: true });
+
+  if (error) {
+    console.error(
+      "[eventService] fetchMyOrganizedEvents data fetching error:",
+      error
+    );
+    throw error;
+  }
+
+  // Process the data as we do in other fetchers
+  return (data || []).map((event: any) => ({
+    id: event.id,
+    name: event.name,
+    description: event.description,
+    start_time: event.start_time,
+    end_time: event.end_time,
+    location_text: event.location_text,
+    cover_image_url: event.cover_image_url,
+    club_id: event.club_id,
+    privacy: event.privacy,
+    max_participants: event.max_participants,
+    host_club_name: event.host_club
+      ? processSingleNestedRelation(event.host_club)?.name
+      : null,
+    participant_count:
+      event.event_participants && event.event_participants.length > 0
+        ? event.event_participants[0].count
+        : 0,
+    event_sport_types: (event.event_sport_types || [])
+      .map((est: any) => ({
+        sport_types: processSingleNestedRelation(
+          est.sport_types
+        ) as SportTypeStub | null,
+      }))
+      .filter((est: any) => est.sport_types !== null),
+  })) as ListedEvent[];
+};
+
+/**
+ * Fetches all upcoming events a user is attending or interested in.
+ * Calls the `get_my_attending_events` RPC.
+ */
+export const fetchMyAttendingEvents = async (): Promise<ListedEvent[]> => {
+  console.log(`[eventService] Fetching ATTTENDING events for current user...`);
+
+  // 1. Get the list of relevant event rows from the RPC
+  const { data: eventRows, error: rpcError } = await supabase.rpc(
+    "get_my_attending_events"
+  );
+
+  if (rpcError) {
+    console.error("[eventService] fetchMyAttendingEvents RPC error:", rpcError);
+    throw rpcError;
+  }
+  if (!eventRows || eventRows.length === 0) {
+    return [];
+  }
+
+  const eventIds = eventRows.map((event: { id: string }) => event.id);
+
+  // 2. Fetch the rich details for the identified events
+  const { data, error } = await supabase
+    .from("events")
+    .select(
+      `
+      id, name, start_time, location_text, cover_image_url,
+      host_club:clubs ( name ),
+      event_participants ( count ),
+      event_sport_types ( sport_types ( id, name ) )
+    `
+    )
+    .in("id", eventIds)
+    .order("start_time", { ascending: true });
+
+  if (error) {
+    console.error(
+      "[eventService] fetchMyAttendingEvents data fetching error:",
+      error
+    );
+    throw error;
+  }
+
+  // 3. Process the data (as before)
+  return (data || []).map((event: any) => ({
+    // ... mapping logic to return an array of ListedEvent
   })) as ListedEvent[];
 };

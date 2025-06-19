@@ -124,9 +124,6 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
     return { upcomingEvents: upcoming, pastEvents: past };
   }, [allClubEvents]);
 
-  console.log("Upcoming:", upcomingEvents);
-  console.log("Past events:", pastEvents);
-
   // --- Mutations for Club Actions ---
   const joinClubMutation = useMutation({
     mutationFn: joinPublicClub, // Assumes this function exists in clubMemberService.ts
@@ -239,7 +236,9 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
     );
   }
 
-  const memberProfiles = club.club_members?.map((member) => member.profiles);
+  const memberProfiles = club.club_members?.map(
+    (member) => member.member_profile
+  );
 
   const userHasEditRights =
     userRelationship.isAdmin ||
@@ -381,9 +380,9 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
             isLoading={isLoadingEvents}
             isError={false} // Error handling for this query can be added if needed
             error={null}
-            onSeeAllPress={() =>
-              navigation.navigate("AppTabs", { screen: "Events" })
-            }
+            // onSeeAllPress={() =>
+            //   navigation.navigate("AppTabs", { screen: "Events" })
+            // }
             emptyMessage="No upcoming events scheduled."
           />
 

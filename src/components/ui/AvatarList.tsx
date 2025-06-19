@@ -14,7 +14,9 @@ const AvatarList: React.FC<AvatarListProps> = ({ profiles }) => {
   const theme = useAppTheme();
   const styles = getStyles(theme);
 
-  if (!profiles) return <StyledText>No members yes, join us!</StyledText>;
+  if (!profiles) {
+    return <StyledText>No members yet, join us!</StyledText>;
+  }
 
   const exceedsMaxAvatars = profiles.length > MAX_AVATARS;
 

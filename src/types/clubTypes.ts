@@ -16,7 +16,7 @@ export type ClubMember = {
   user_id: string;
   role: ClubRole;
   joined_at?: string; // ISO timestamp
-  profiles: ProfileStub | null; // Processed nested profile data
+  member_profile: ProfileStub | null; // Processed nested profile data
 };
 
 export type ClubReviewData = {

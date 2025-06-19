@@ -65,35 +65,63 @@ export const fetchVisibleClubs = async (): Promise<ListedClub[]> => {
   }) as ListedClub[];
 };
 
-export const fetchMyClubs = async (userId: string): Promise<ListedClub[]> => {
-  if (!userId) return [];
-  console.log(`[clubService] Fetching clubs for user ${userId}...`);
+/**
+ * Fetches all clubs the current user is a member of (but not admin/contributor).
+ * Calls the `get_my_member_clubs` RPC.
+ */
+export const fetchMyMemberClubs = async (): Promise<ListedClub[]> => {
+  console.log(`[clubService] Fetching member-of clubs for current user...`);
+
+  // 1. Get the list of relevant club rows from the RPC
+  const { data: clubRows, error: rpcError } = await supabase.rpc(
+    "get_my_member_clubs"
+  );
+
+  if (rpcError) {
+    console.error("[clubService] fetchMyMemberClubs RPC error:", rpcError);
+    throw rpcError;
+  }
+  if (!clubRows || clubRows.length === 0) {
+    return [];
+  }
+
+  const clubIds = clubRows.map((club: { id: string }) => club.id);
+
+  // 2. Fetch the rich details for the identified clubs
   const { data, error } = await supabase
-    .from("club_members")
+    .from("clubs")
     .select(
       `
-      clubs!inner (
-        id, name, location_text, cover_image_url, privacy,
-        club_sport_types ( sport_types ( id, name ) )
-      )
+      id, name, location_text, cover_image_url, privacy,
+      club_members ( count ),
+      club_sport_types ( sport_types!inner ( id, name ) )
     `
     )
-    .eq("user_id", userId)
-    // Optionally filter by role if needed, e.g., .in('role', ['admin', 'member', 'contributor'])
-    .limit(10); // Limit for home screen
+    .in("id", clubIds)
+    .order("name", { ascending: true }); // Order alphabetically
 
   if (error) {
-    console.error("[clubService] fetchMyClubs error:", error);
+    console.error(
+      "[clubService] fetchMyMemberClubs data fetching error:",
+      error
+    );
     throw error;
   }
-  return (data || []).map((item: any) => {
-    const club = item.clubs; // Data is nested under 'clubs'
+
+  // 3. Process the data to match the ListedClub type
+  return (data || []).map((club: any) => {
+    const memberCount =
+      club.club_members && club.club_members.length > 0
+        ? club.club_members[0].count
+        : 0;
+
     return {
       id: club.id,
       name: club.name,
       location_text: club.location_text,
       cover_image_url: club.cover_image_url,
       privacy: club.privacy,
+      member_count: memberCount,
       club_sport_types: (club.club_sport_types || [])
         .map((cst: any) => ({
           sport_types: processSingleNestedRelation(
@@ -101,7 +129,6 @@ export const fetchMyClubs = async (userId: string): Promise<ListedClub[]> => {
           ) as SportTypeStub | null,
         }))
         .filter((cst: any) => cst.sport_types !== null),
-      member_count: club.member_count,
     };
   }) as ListedClub[];
 };
@@ -348,4 +375,71 @@ export const submitClubClaim = async (payload: SubmitClubClaimPayload) => {
   }
 
   return data;
+};
+
+/**
+ * Fetches all clubs managed by the current user (where they are admin or contributor).
+ * @param {string} userId - The ID of the currently authenticated user.
+ */
+export const fetchMyManagedClubs = async (
+  userId: string
+): Promise<ListedClub[]> => {
+  if (!userId) return []; // Return empty array if no user is logged in
+  console.log(`[clubService] Fetching managed clubs for user ${userId}...`);
+
+  const { data, error } = await supabase
+    .from("club_members")
+    .select(
+      `
+      clubs!inner (
+        id,
+        name,
+        location_text,
+        cover_image_url,
+        privacy,
+        club_members ( count ),
+        club_sport_types ( sport_types!inner ( id, name ) )
+      )
+    `
+    )
+    .eq("user_id", userId)
+    .in("role", ["admin", "contributor"]); // The key filter for managed clubs
+
+  if (error) {
+    console.error("[clubService] fetchMyManagedClubs error:", error);
+    throw error;
+  }
+
+  if (!data) {
+    return [];
+  }
+
+  // The query returns an array of { clubs: { ... } }, so we need to map it
+  return data
+    .map((item: any) => {
+      const club = item.clubs;
+      if (!club) return null; // Should not happen with an inner join, but good practice
+
+      const memberCount =
+        club.club_members && club.club_members.length > 0
+          ? club.club_members[0].count
+          : 0;
+
+      return {
+        id: club.id,
+        name: club.name,
+        location_text: club.location_text,
+        cover_image_url: club.cover_image_url,
+        privacy: club.privacy,
+        member_count: memberCount,
+        club_sport_types: (club.club_sport_types || [])
+          .map((cst: any) => ({
+            sport_types: processSingleNestedRelation(
+              cst.sport_types
+            ) as SportTypeStub | null,
+          }))
+          .filter((cst: any) => cst.sport_types !== null),
+      };
+    })
+    .filter(Boolean) as ListedClub[]; // filter(Boolean) removes any null entries
 };

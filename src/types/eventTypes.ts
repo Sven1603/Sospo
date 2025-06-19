@@ -74,6 +74,11 @@ export type EventJoinRequestData = {
   status: "pending"; // We only care about pending for this UI state
 };
 
+export type EventRow = {
+  id: string;
+  // Add other direct columns from 'events' table if you need to access them here
+};
+
 // Note: EventFormData for the create/edit wizard can remain in its own folder
 // (e.g., src/screens/App/Events/EventForm/eventForm.types.ts) as it's very specific to that form's state.
 // The types above are more for data fetched from/sent to services.
