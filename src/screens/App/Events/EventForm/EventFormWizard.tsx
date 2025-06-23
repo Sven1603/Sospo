@@ -7,19 +7,10 @@ import {
   Platform,
   KeyboardAvoidingView,
 } from "react-native";
-import {
-  Button,
-  Text,
-  ActivityIndicator,
-  Snackbar,
-  useTheme,
-  ProgressBar,
-  Caption,
-  MD3Theme,
-} from "react-native-paper";
+import { ActivityIndicator, Snackbar, ProgressBar } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MainAppStackParamList } from "../../../../navigation/types"; // Adjust path
-import { supabase } from "../../../../lib/supabase"; // Adjust path
+import { MainAppStackParamList } from "../../../../navigation/types";
+import { supabase } from "../../../../lib/supabase";
 
 import {
   EventFormData,
@@ -38,6 +29,9 @@ import ChooseSportTypes from "./ChooseSportTypes";
 import SetEventLocation from "./SetEventLocation";
 import DateTimeRecurrence from "./DateTimeRecurrence";
 import EventOverviewAndDetails from "./EventOverviewAndDetails";
+import { AppTheme, useAppTheme } from "../../../../theme/theme";
+import StyledText from "../../../../components/ui/StyledText";
+import StyledButton from "../../../../components/ui/StyledButton";
 
 type Props = NativeStackScreenProps<MainAppStackParamList, "EventWizardScreen">;
 
@@ -48,7 +42,7 @@ const EventFormWizard: React.FC<Props> = ({ route, navigation }) => {
     eventId,
     eventName: initialEventName,
   } = route.params || {};
-  const theme = useTheme<MD3Theme>();
+  const theme = useAppTheme();
   const styles = getStyles(theme);
 
   const [isEditMode, setIsEditMode] = useState<boolean>(!!eventId);
@@ -190,7 +184,7 @@ const EventFormWizard: React.FC<Props> = ({ route, navigation }) => {
         // Create Mode
         setIsEditMode(false);
         navigation.setOptions({
-          title: clubName ? `New Event for ${clubName}` : "Create New Event",
+          title: "New Event",
         });
         setFormData({
           // Reset to initial, considering clubId for privacy
@@ -646,7 +640,6 @@ const EventFormWizard: React.FC<Props> = ({ route, navigation }) => {
               selectedSportTypeIds: errors.selectedSportTypeIds,
               _sportTypesLoad: errors._sportTypesLoad,
             }}
-            theme={theme}
           />
         );
       case 2:
@@ -655,7 +648,6 @@ const EventFormWizard: React.FC<Props> = ({ route, navigation }) => {
             formData={formData}
             handleChange={handleChange}
             errors={errors}
-            theme={theme}
           />
         );
       case 3:
@@ -693,7 +685,7 @@ const EventFormWizard: React.FC<Props> = ({ route, navigation }) => {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" />
-        <Text>Loading form...</Text>
+        <StyledText>Loading form...</StyledText>
       </View>
     );
   }
@@ -716,47 +708,36 @@ const EventFormWizard: React.FC<Props> = ({ route, navigation }) => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={[styles.stepIndicator, { color: theme.colors.outline }]}>
+          <StyledText color={theme.colors.outline} alignCenter>
             Step {currentStep} of {totalSteps}{" "}
             {clubName ? `- Event for ${clubName}` : ""}
-          </Text>
-          {clubName && (
-            <Caption
-              style={[
-                styles.clubContextText,
-                { color: theme.colors.onSurfaceVariant },
-              ]}
-            >
-              Creating event for: {clubName}
-            </Caption>
-          )}
+          </StyledText>
 
           {renderCurrentStepComponent()}
         </ScrollView>
 
         <View style={styles.navigationButtons}>
           {currentStep > 1 ? (
-            <Button
-              mode="outlined"
+            <StyledButton
+              variant="outline"
               onPress={prevStep}
-              style={styles.navButton}
+              size="small"
               disabled={isSubmitting}
             >
               Back
-            </Button>
+            </StyledButton>
           ) : (
             <View style={styles.navButtonPlaceholder} />
           )}
 
           {currentStep < totalSteps ? (
-            <Button
-              mode="contained"
+            <StyledButton
               onPress={nextStep}
-              style={styles.navButton}
+              size="small"
               disabled={isSubmitting}
             >
               Next
-            </Button>
+            </StyledButton>
           ) : (
             <View style={styles.navButtonPlaceholder} />
           )}
@@ -774,7 +755,7 @@ const EventFormWizard: React.FC<Props> = ({ route, navigation }) => {
   );
 };
 
-const getStyles = (theme: MD3Theme) =>
+const getStyles = (theme: AppTheme) =>
   StyleSheet.create({
     keyboardAvoidingView: {
       flex: 1,
@@ -782,27 +763,25 @@ const getStyles = (theme: MD3Theme) =>
     mainViewContainer: {
       flex: 1,
       backgroundColor: theme.colors.background,
+      gap: theme.spacing.medium,
     },
     progressBar: {
       height: 8,
+      backgroundColor: theme.colors.surface,
       // No margin needed, part of the main view's flow or absolute positioning
     },
     scrollContainer: {
-      flex: 1, // Allows ScrollView to take available space BEFORE the absolute footer
+      flex: 1,
     },
     scrollContentContainer: {
       padding: 20, // Horizontal and top padding for content
       paddingBottom: 120, // <<< INCREASED PADDING: Ample space for the fixed footer buttons
+      gap: theme.spacing.small,
     },
     stepIndicator: {
       textAlign: "center",
       marginVertical: 10,
       fontSize: 12,
-    },
-    clubContextText: {
-      textAlign: "center",
-      marginBottom: 20,
-      fontStyle: "italic",
     },
     navigationButtons: {
       position: "absolute", // <<< Makes it an overlay at the bottom
@@ -812,16 +791,10 @@ const getStyles = (theme: MD3Theme) =>
       flexDirection: "row",
       justifyContent: "space-between",
       paddingHorizontal: 20, // Side padding for buttons
-      paddingTop: 15, // Padding above buttons
+      paddingTop: theme.spacing.small,
       paddingBottom: Platform.OS === "ios" ? 30 : 15, // Padding below buttons (for safe area notch etc.)
-      borderTopWidth: 1,
-      borderTopColor: "black", // Use theme
-      backgroundColor: "white", // Use theme
+      backgroundColor: theme.colors.background, // Use theme
       elevation: 4, // Optional: add some elevation if needed
-    },
-    navButton: {
-      flex: 1, // Makes "Back" and "Next" share space
-      marginHorizontal: 5,
     },
     navButtonPlaceholder: {
       // To maintain layout when one button is hidden
@@ -834,13 +807,6 @@ const getStyles = (theme: MD3Theme) =>
       justifyContent: "center",
       alignItems: "center",
       padding: 20,
-    },
-    placeholderText: {
-      // For unimplemented steps
-      padding: 20,
-      textAlign: "center",
-      fontSize: 16,
-      color: "gray", // Use theme
     },
   });
 

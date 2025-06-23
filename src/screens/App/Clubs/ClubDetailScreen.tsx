@@ -308,7 +308,8 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
           <View style={styles.contentContainer}>
             {primaryActionContent}
 
-            {club.review_count !== null && club.review_count > 0 ? (
+            {/* TODO: add review section and logic */}
+            {/* {club.review_count !== null && club.review_count > 0 ? (
               <TouchableOpacity
                 onPress={() =>
                   navigation.navigate("ClubReviewsScreen", {
@@ -348,7 +349,7 @@ const ClubDetailScreen = ({ route, navigation }: Props) => {
               >
                 <StyledText>No reviews yet. Be the first!</StyledText>
               </TouchableOpacity>
-            )}
+            )} */}
 
             {club.description && (
               <View>

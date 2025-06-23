@@ -15,6 +15,7 @@ import {
   MD3Theme,
 } from "react-native-paper";
 import { EventFormData, SportType } from "./eventForm.types";
+import PrivacySelector from "../../../../components/form/PrivacySelector";
 
 interface EventOverviewAndDetailsProps {
   formData: EventFormData;
@@ -287,15 +288,12 @@ const EventOverviewAndDetails: React.FC<EventOverviewAndDetailsProps> = ({
         <HelperText type="error">{errors.maxParticipants}</HelperText>
       )}
 
-      <Text style={styles.label}>Event Privacy*</Text>
-      <SegmentedButtons
-        value={formData.privacy}
-        onValueChange={(value) => handleChange("privacy", value as any)}
-        buttons={privacyOptions}
-        style={styles.input}
-        density="medium"
+      <PrivacySelector
+        context={clubId ? "club_event" : "personal_event"}
+        currentPrivacy={formData.privacy}
+        onPrivacyChange={(value) => handleChange("privacy", value)}
+        error={errors.privacy}
       />
-      {errors.privacy && <HelperText type="error">{errors.privacy}</HelperText>}
 
       <TextInput
         label="Cover Image URL (optional)"

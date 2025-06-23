@@ -169,7 +169,8 @@ const MainAppStackNavigator = () => {
         name="ClubReviewsScreen"
         component={ClubReviewsScreen}
         options={({ route }) => ({
-          title: `Reviews: ${route.params.clubName}`,
+          title: `Reviews`,
+          headerLeft: undefined,
         })}
       />
       <Stack.Screen
@@ -185,9 +186,7 @@ const MainAppStackNavigator = () => {
         name="EventWizardScreen"
         component={EventFormWizard}
         options={({ route }) => ({
-          title: route.params?.clubName
-            ? `New Event for ${route.params.clubName}`
-            : "Create New Event",
+          title: route.params?.clubName ? `New Event` : "Create New Event",
           headerLeft: undefined,
         })}
       />

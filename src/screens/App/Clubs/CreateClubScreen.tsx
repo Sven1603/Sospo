@@ -1,27 +1,24 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo } from "react";
 import { StyleSheet, ScrollView, Alert, View, Image } from "react-native";
-import {
-  Checkbox,
-  SegmentedButtons,
-  ActivityIndicator,
-  Snackbar,
-} from "react-native-paper";
+import { Snackbar } from "react-native-paper";
 import { supabase } from "../../../lib/supabase";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as ImagePicker from "expo-image-picker";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { MainAppStackParamList } from "../../../navigation/types";
 
-import { fetchAllSportTypes } from "../../../services/sportService";
 import { uploadClubCoverImage } from "../../../services/clubService";
 import { AppTheme, useAppTheme } from "../../../theme/theme";
 import StyledTextInput from "../../../components/ui/StyledTextInput";
 import StyledText from "../../../components/ui/StyledText";
 import StyledButton from "../../../components/ui/StyledButton";
 import StyledIconButton from "../../../components/ui/IconButton";
-import MapView, { MapPressEvent, Marker } from "react-native-maps";
-import * as Location from "expo-location";
-import { SUPPORTED_SPORTS } from "../../../utils/constants";
+import SportSelector from "../../../components/form/SportSelector";
+import PrivacySelector from "../../../components/form/PrivacySelector";
+import { ClubPrivacy } from "../../../types/clubTypes";
+import LocationPicker, {
+  LocationData,
+} from "../../../components/form/LocationPicker";
 
 type CreateClubScreenNavigationProp = NativeStackNavigationProp<
   MainAppStackParamList,
@@ -38,22 +35,14 @@ const privacyOptions = [
   // { label: "Private", value: "private", icon: "lock" },
 ];
 
-const AMSTERDAM_COORDS = {
-  latitude: 52.3676,
-  longitude: 4.9041,
-  latitudeDelta: 0.0922,
-  longitudeDelta: 0.0421,
-};
-
 const CreateClubScreen = ({ navigation }: Props) => {
   const theme = useAppTheme();
   const styles = useMemo(() => getStyles(theme), [theme]);
   const queryClient = useQueryClient();
-  const mapRef = useRef<MapView>(null);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [privacy, setPrivacy] = useState<"public" | "controlled">("public");
+  const [privacy, setPrivacy] = useState<ClubPrivacy>("public");
   const [selectedSportIds, setSelectedSportIds] = useState<string[]>([]);
   const [coverImage, setCoverImage] =
     useState<ImagePicker.ImagePickerAsset | null>(null);
@@ -63,27 +52,9 @@ const CreateClubScreen = ({ navigation }: Props) => {
     null
   );
   const [locationText, setLocationText] = useState("");
-  const [isGeocoding, setIsGeocoding] = useState(false);
 
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
-
-  const { data: allSportTypes = [], isLoading: isLoadingSports } = useQuery({
-    queryKey: ["sportTypes"],
-    queryFn: fetchAllSportTypes,
-  });
-
-  const markerCoordinates = useMemo(
-    () =>
-      latitude && longitude
-        ? { latitude: latitude, longitude: longitude }
-        : null,
-    [latitude, longitude]
-  );
-
-  const sportTypes = allSportTypes.filter((sport) =>
-    SUPPORTED_SPORTS.includes(sport.name.toLowerCase())
-  );
 
   const createClubMutation = useMutation({
     mutationFn: async () => {
@@ -137,29 +108,10 @@ const CreateClubScreen = ({ navigation }: Props) => {
     },
   });
 
-  const handleMapPress = async (e: MapPressEvent) => {
-    const coords = e.nativeEvent.coordinate;
-    setLatitude(coords.latitude);
-    setLongitude(coords.longitude);
-
-    setIsGeocoding(true);
-    setMapDerivedAddress("Fetching address...");
-    try {
-      const addressResult = await Location.reverseGeocodeAsync(coords);
-      if (addressResult && addressResult.length > 0) {
-        const { street, streetNumber, city, postalCode } = addressResult[0];
-        const formattedAddress = [streetNumber, street, city, postalCode]
-          .filter(Boolean)
-          .join(", ");
-        setMapDerivedAddress(formattedAddress);
-      } else {
-        setMapDerivedAddress("Address not found.");
-      }
-    } catch (error) {
-      setMapDerivedAddress("Could not fetch address.");
-    } finally {
-      setIsGeocoding(false);
-    }
+  const handleLocationSelect = (locationData: LocationData) => {
+    setLatitude(locationData.latitude);
+    setLongitude(locationData.longitude);
+    setMapDerivedAddress(locationData.address);
   };
 
   const handleSelectImage = async () => {
@@ -194,6 +146,13 @@ const CreateClubScreen = ({ navigation }: Props) => {
     createClubMutation.mutate();
   };
 
+  const handleToggleSportType = (sportId: string) => {
+    const newSelection = selectedSportIds.includes(sportId)
+      ? selectedSportIds.filter((id) => id !== sportId)
+      : [...selectedSportIds, sportId];
+    setSelectedSportIds(newSelection);
+  };
+
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <View style={styles.imagePreviewContainer}>
@@ -219,54 +178,22 @@ const CreateClubScreen = ({ navigation }: Props) => {
         numberOfLines={3}
       />
 
-      <StyledText variant="titleSmall">Sport Type(s)*</StyledText>
-      {isLoadingSports ? (
-        <ActivityIndicator />
-      ) : (
-        sportTypes.map((sport) => (
-          <Checkbox.Item
-            key={sport.id}
-            label={sport.name}
-            status={
-              selectedSportIds.includes(sport.id) ? "checked" : "unchecked"
-            }
-            onPress={() => {
-              const newSelection = selectedSportIds.includes(sport.id)
-                ? selectedSportIds.filter((id) => id !== sport.id)
-                : [...selectedSportIds, sport.id];
-              setSelectedSportIds(newSelection);
-            }}
-            position="leading"
-          />
-        ))
-      )}
+      <SportSelector
+        selectedSportIds={selectedSportIds}
+        onToggleSportType={handleToggleSportType}
+        // You can pass a Zod validation error here if you implement it
+        // error={errors.selectedSportIds}
+      />
 
-      <StyledText variant="titleSmall">Location*</StyledText>
-      <StyledText>
-        Tap on the map to set your club's primary location.
-      </StyledText>
-      <View style={styles.mapContainer}>
-        <MapView
-          ref={mapRef}
-          style={styles.map}
-          initialRegion={AMSTERDAM_COORDS}
-          onPress={handleMapPress}
-        >
-          {markerCoordinates && (
-            <Marker
-              coordinate={{
-                latitude: markerCoordinates.latitude,
-                longitude: markerCoordinates.longitude,
-              }}
-            />
-          )}
-        </MapView>
-      </View>
-      {isGeocoding ? (
-        <ActivityIndicator size="small" />
-      ) : (
-        mapDerivedAddress && <StyledText>{mapDerivedAddress}</StyledText>
-      )}
+      <StyledText variant="titleSmall">Location</StyledText>
+      <LocationPicker
+        onLocationSelect={handleLocationSelect}
+        initialCoordinates={
+          latitude && longitude
+            ? { latitude: latitude, longitude: longitude }
+            : null
+        }
+      />
       {!latitude ||
         (!longitude && (
           <StyledText color={theme.colors.error}>
@@ -281,11 +208,11 @@ const CreateClubScreen = ({ navigation }: Props) => {
         onChangeText={setLocationText}
       />
 
-      <StyledText variant="titleSmall">Privacy*</StyledText>
-      <SegmentedButtons
-        value={privacy}
-        onValueChange={(value) => setPrivacy(value as "public" | "controlled")}
-        buttons={privacyOptions}
+      <PrivacySelector
+        context="club"
+        currentPrivacy={privacy}
+        onPrivacyChange={setPrivacy}
+        // error={errors.privacy} // Pass Zod error if you add it
       />
       <StyledText>
         Public: anyone can join. Controlled: users must request to join.
@@ -317,15 +244,6 @@ const getStyles = (theme: AppTheme) =>
       paddingBottom: 40,
       gap: theme.spacing.medium,
     },
-    checkboxItem: {
-      // Style for the individual Checkbox.Item container if needed
-      // e.g., backgroundColor: '#f0f0f0', borderRadius: 4, marginBottom: 2
-      paddingVertical: 0, // Reduce default padding of Checkbox.Item
-    },
-    checkboxLabel: {
-      // Style for the label text of Checkbox.Item
-      // e.g., color: 'black'
-    },
     imagePreviewContainer: {
       alignItems: "center",
       marginBottom: 16,
@@ -343,15 +261,6 @@ const getStyles = (theme: AppTheme) =>
       borderRadius: 20,
       padding: 4,
     },
-    mapContainer: {
-      height: 250,
-      width: "100%",
-      marginBottom: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.outlineVariant,
-      borderRadius: theme.roundness,
-    },
-    map: { flex: 1 },
   });
 
 export default CreateClubScreen;

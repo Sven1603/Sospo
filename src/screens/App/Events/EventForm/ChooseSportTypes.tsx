@@ -1,15 +1,12 @@
 // src/screens/App/CreateEventForm/ChooseSportTypes.tsx
 import React from "react";
 import { View, StyleSheet } from "react-native";
-import {
-  Text,
-  Checkbox,
-  HelperText,
-  ActivityIndicator,
-  Title,
-  MD3Theme,
-} from "react-native-paper";
+import { ActivityIndicator } from "react-native-paper";
 import { SportType } from "./eventForm.types";
+import { SUPPORTED_SPORTS } from "../../../../utils/constants";
+import StyledText from "../../../../components/ui/StyledText";
+import { AppTheme, useAppTheme } from "../../../../theme/theme";
+import SportSelector from "../../../../components/form/SportSelector";
 
 interface ChooseSportTypesProps {
   // Receives only the part of formData and errors it cares about
@@ -23,11 +20,7 @@ interface ChooseSportTypesProps {
       string | null | undefined
     >
   >;
-  theme: MD3Theme;
 }
-
-// For MVP, we focus on these three in the UI, though DB supports more
-const MVP_SPORT_NAMES_LOWERCASE = ["run", "cycle", "swim"];
 
 const ChooseSportTypes: React.FC<ChooseSportTypesProps> = ({
   selectedSportTypeIds,
@@ -35,13 +28,13 @@ const ChooseSportTypes: React.FC<ChooseSportTypesProps> = ({
   availableSportTypes,
   loadingSportTypes,
   errors,
-  theme,
 }) => {
+  const theme = useAppTheme();
   const styles = React.useMemo(() => getStyles(theme), [theme]);
 
   // Filter available sports to only show the MVP ones, but ensure they exist
   const displayableSportTypes = availableSportTypes.filter((sport) =>
-    MVP_SPORT_NAMES_LOWERCASE.includes(sport.name.toLowerCase())
+    SUPPORTED_SPORTS.includes(sport.name.toLowerCase())
   );
 
   if (loadingSportTypes) {
@@ -51,92 +44,27 @@ const ChooseSportTypes: React.FC<ChooseSportTypesProps> = ({
   }
 
   return (
-    <View>
-      <Title style={styles.stepTitle}>Step 1: Choose Sport Type(s)</Title>
-      <Text style={styles.label}>
-        Select all applicable sport types for this event*:
-      </Text>
-
-      {displayableSportTypes.length > 0
-        ? displayableSportTypes.map((sport) => (
-            <Checkbox.Item
-              key={sport.id}
-              label={sport.name}
-              status={
-                selectedSportTypeIds.includes(sport.id)
-                  ? "checked"
-                  : "unchecked"
-              }
-              onPress={() => onToggleSportType(sport.id)}
-              position="leading" // Checkbox before label
-              style={styles.checkboxItem}
-              labelStyle={{ color: theme.colors.onSurface }} // Ensure label is visible
-            />
-          ))
-        : !errors._sportTypesLoad && ( // Only show "No sport types" if there wasn't a loading error
-            <Text
-              style={{
-                color: theme.colors.error,
-                marginVertical: 10,
-                textAlign: "center",
-              }}
-            >
-              No focus sport types (Running, Cycling, Swimming) found. Please
-              ensure they are in the database or contact support.
-            </Text>
-          )}
-
-      {/* Display error for selecting at least one sport type (from Zod validation) */}
-      {errors.selectedSportTypeIds && (
-        <HelperText
-          type="error"
-          visible={!!errors.selectedSportTypeIds}
-          style={styles.errorText}
-        >
-          {errors.selectedSportTypeIds}
-        </HelperText>
-      )}
-      {/* Display general error for loading sport types */}
-      {errors._sportTypesLoad && (
-        <HelperText
-          type="error"
-          visible={!!errors._sportTypesLoad}
-          style={styles.errorText}
-        >
-          {errors._sportTypesLoad}
-        </HelperText>
-      )}
+    <View style={styles.container}>
+      <StyledText variant="titleMedium">
+        Step 1: Choose Sport Type(s)
+      </StyledText>
+      <SportSelector
+        selectedSportIds={selectedSportTypeIds}
+        onToggleSportType={onToggleSportType}
+        // You can pass a Zod validation error here if you implement it
+        // error={errors.selectedSportIds}
+      />
     </View>
   );
 };
 
-const getStyles = (theme: MD3Theme) =>
+const getStyles = (theme: AppTheme) =>
   StyleSheet.create({
-    stepTitle: {
-      marginBottom: 20,
-      fontWeight: "bold",
-      fontSize: 18,
-      textAlign: "center",
-      color: theme.colors.primary,
-    },
-    label: {
-      fontSize: 16,
-      marginBottom: 10,
-      marginTop: 8,
-      fontWeight: "500",
-      color: theme.colors.onSurfaceVariant,
-    },
-    checkboxItem: {
-      paddingVertical: 4, // Adjust padding
-      backgroundColor: theme.colors.surfaceVariant,
-      borderRadius: theme.roundness,
-      marginBottom: 8,
+    container: {
+      gap: theme.spacing.medium,
     },
     loader: {
       marginVertical: 20,
-    },
-    errorText: {
-      fontSize: 14,
     },
   });
 
